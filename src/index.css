@@ -1,0 +1,643 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* APP LAYOUT */
+
+.app {
+  min-height: 100vh;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+/* TEXT */
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: 32px;
+}
+
+h2 {
+  margin-bottom: 10px;
+  font-size: 24px;
+}
+
+h3 {
+  margin-bottom: 6px;
+  font-size: 17px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.bodyText {
+  line-height: 1.6;
+  color: #475569;
+}
+
+.mutedText {
+  color: #64748b;
+}
+
+/* SHARED CARDS */
+
+.card,
+.topBar,
+.heroCard,
+.statCard {
+  background: white;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.card {
+  border-radius: 24px;
+  padding: 24px;
+}
+
+/* TOP BAR */
+
+.topBar {
+  border-radius: 24px;
+  padding: 22px 24px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+/* BUTTONS */
+
+.buttonRow {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.primaryButton,
+.secondaryButton,
+.smallButton,
+.fullButton,
+.aiButton {
+  border-radius: 14px;
+  padding: 11px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  border: 1px solid #cbd5e1;
+}
+
+.primaryButton,
+.fullButton,
+.aiButton {
+  background: #0f172a;
+  color: white;
+  border-color: #0f172a;
+}
+
+.secondaryButton,
+.smallButton {
+  background: white;
+  color: #0f172a;
+}
+
+.primaryButton:hover,
+.fullButton:hover,
+.aiButton:hover {
+  background: #334155;
+}
+
+.secondaryButton:hover,
+.smallButton:hover {
+  background: #f8fafc;
+}
+
+.fullButton {
+  width: 100%;
+  margin-top: 20px;
+  padding: 13px 16px;
+}
+
+.bottomButtons {
+  margin-top: 20px;
+}
+
+/* MAIN DASHBOARD GRID */
+
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+/* HERO CARD */
+
+.heroCard {
+  border-radius: 28px;
+  padding: 30px;
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 24px;
+  align-items: center;
+  min-height: 240px;
+}
+
+.heroCard h2 {
+  font-size: 36px;
+  line-height: 1.1;
+  max-width: 620px;
+}
+
+.scoreBox {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
+  padding: 24px;
+  text-align: center;
+}
+
+.scoreBox p {
+  margin-bottom: 8px;
+  color: #64748b;
+}
+
+.scoreBox strong {
+  display: block;
+  font-size: 52px;
+}
+
+.scoreBox span {
+  color: #64748b;
+  font-size: 14px;
+}
+
+/* STATS */
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.statCard {
+  border-radius: 22px;
+  padding: 22px;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.statCard p {
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.statCard strong {
+  font-size: 30px;
+}
+
+/* GOAL RACE CARD */
+
+.goalCard {
+  padding: 32px;
+  margin-bottom: 24px;
+}
+
+.goalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.goalHeader h2 {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.05;
+}
+
+.goalHeader span {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  padding: 10px 16px;
+  color: #64748b;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.goalButtons {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.goalButtons button {
+  min-height: 62px;
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #0f172a;
+  border-radius: 18px;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.goalButtons button:hover {
+  background: #f8fafc;
+}
+
+.goalButtons button.activeGoalButton {
+  background: #0f172a;
+  color: white;
+  border-color: #0f172a;
+}
+
+.goalDashboardGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.goalInfoCard,
+.goalInputCard,
+.goalAiCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 22px;
+  background: #f8fafc;
+  padding: 22px;
+}
+
+.cardLabel {
+  margin-bottom: 14px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.goalFormulaText {
+  margin-bottom: 14px;
+  color: #475569;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.formulaTime {
+  display: block;
+  margin-bottom: 20px;
+  font-size: 42px;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.aiButton {
+  width: 100%;
+  border: 1px solid #0f172a;
+  border-radius: 16px;
+  background: #0f172a;
+  color: white;
+  padding: 15px 20px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.pastRaceForm {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 18px;
+}
+
+.pastRaceForm label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pastRaceForm select,
+.pastRaceForm input {
+  width: 100%;
+  min-height: 54px;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-size: 17px;
+  color: #0f172a;
+  background: white;
+}
+
+.pastRaceForm select:focus,
+.pastRaceForm input:focus {
+  outline: 2px solid #0f172a;
+  outline-offset: 2px;
+}
+
+.inputError {
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.goalAiCard {
+  grid-column: 1 / -1;
+}
+
+.goalAiCard strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 48px;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.goalAiCard span {
+  display: block;
+  margin-bottom: 12px;
+  color: #475569;
+  font-size: 17px;
+}
+
+.goalAiCard p:last-child {
+  margin-bottom: 0;
+  color: #475569;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+/* CONTENT GRID */
+
+.contentGrid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.sectionHeader p {
+  color: #64748b;
+  margin-bottom: 0;
+}
+
+/* RUN BOXES */
+
+.runList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.runBox {
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: center;
+  background: white;
+}
+
+.runBox:hover {
+  background: #f8fafc;
+}
+
+.runBox p {
+  color: #64748b;
+  margin-bottom: 0;
+}
+
+.runDetails {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 24px;
+  align-items: center;
+  text-align: right;
+}
+
+.runDetails strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.pill {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  background: #f8fafc;
+}
+
+/* RACE PREDICTIONS */
+
+.predictionList {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.predictionBox {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  background: white;
+}
+
+.emptyStateBox {
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 18px;
+  color: #64748b;
+  background: #f8fafc;
+  line-height: 1.5;
+}
+
+/* FITNESS SUMMARY */
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.breakdownGrid,
+.insightGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.breakdownBox,
+.insightBox {
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  background: #f8fafc;
+  padding: 18px;
+}
+
+.breakdownBox p,
+.insightLabel {
+  margin-bottom: 10px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.breakdownBox strong {
+  font-size: 20px;
+}
+
+.insightBox ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.insightBox li {
+  margin-bottom: 8px;
+  line-height: 1.4;
+  color: #475569;
+}
+
+/* RESPONSIVE */
+
+@media (max-width: 1000px) {
+  .dashboardGrid,
+  .contentGrid,
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .goalHeader {
+    flex-direction: column;
+  }
+
+  .goalButtons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .goalDashboardGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .topBar,
+  .heroCard,
+  .sectionHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .scoreBox {
+    width: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  .breakdownGrid,
+  .insightGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .app {
+    padding: 16px;
+  }
+
+  .goalCard {
+    padding: 24px;
+  }
+
+  .goalButtons,
+  .pastRaceForm,
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .goalHeader h2 {
+    font-size: 36px;
+  }
+
+  .runBox {
+    grid-template-columns: 1fr;
+  }
+
+  .runDetails {
+    width: 100%;
+    grid-template-columns: 1fr auto;
+    text-align: left;
+  }
+}
