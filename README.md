@@ -1,8 +1,8 @@
 # Race Readiness AI
 
-Race Readiness AI is a full-stack running dashboard that estimates a runner’s current fitness and race potential.
+Race Readiness AI is a full-stack running dashboard that estimates a runner's current fitness and race potential.
 
-The app uses sample running data, race prediction formulas, and an AI-generated coaching summary to help explain a runner’s strengths, risks, and possible race outcomes.
+The app uses sample running data, race prediction formulas, and an AI-generated coaching summary to help explain a runner's strengths, risks, and possible race outcomes.
 
 ## What It Does
 
@@ -65,22 +65,25 @@ Example:
 Past race: 5K
 Past time: 22:30
 Goal race: Half Marathon
+```
 
 The app then estimates race potential using a race prediction formula and training adjustments.
 
-AI Summary
+### AI Summary
 
-The AI summary uses the runner’s current data to generate:
+The AI summary uses the runner's current data to generate:
 
-* A headline
-* A short fitness summary
-* An AI-adjusted goal time
-* A confidence level
-* Strengths
-* Risks
-* Suggestions
+- A headline
+- A short fitness summary
+- An AI-adjusted goal time
+- A confidence level
+- Strengths
+- Risks
+- Suggestions
 
-Project Structure
+## Project Structure
+
+```text
 race-readiness-ai/
   public/
   src/
@@ -99,69 +102,107 @@ race-readiness-ai/
   server.js
   package.json
   README.md
+```
 
-  How to Run Locally
+## How to Run Locally
 
-1. Clone the repository
+1. Clone the repository:
+
+```bash
 git clone https://github.com/AACoetzee/race-readiness-ai.git
+```
 
-2. Go into the project folder
+2. Go into the project folder:
+
+```bash
 cd race-readiness-ai
+```
 
-3. Install dependencies
+3. Install dependencies:
+
+```bash
 npm install
+```
 
-4. Create an environment file
+4. Create an environment file.
 
-Create a file called .env in the main project folder.
+Create a file called `.env` in the main project folder and add your OpenAI API key:
 
-Add your OpenAI API key:
+```bash
 OPENAI_API_KEY=your_api_key_here
+```
 
 Do not commit this file to GitHub.
 
-5. Start the backend server
+5. Start the backend server:
+
+```bash
 npm run server
+```
 
 The backend runs at:
-http://localhost:3001
 
-6. Start the React app
+```text
+http://localhost:3001
+```
+
+6. Start the React app.
 
 Open a second terminal and run:
+
+```bash
 npm run dev
+```
 
 The frontend runs at:
-http://localhost:5173
 
-Available Scripts
+```text
+http://localhost:5173
+```
+
+## Available Scripts
+
+```bash
 npm run dev
+```
 
 Starts the React frontend.
+
+```bash
 npm run server
+```
 
 Starts the Express backend.
+
+```bash
 npm run build
+```
 
 Builds the app for production.
+
+```bash
 npm run preview
+```
 
 Previews the production build.
 
-Environment Variables
+## Environment Variables
 
 This project uses the OpenAI API.
 
-Create a .env file:
+Create a `.env` file:
+
+```bash
 OPENAI_API_KEY=your_api_key_here
+```
 
 Important:
 
-* Never commit .env
-* Never put API keys directly in frontend code
-* Keep secrets on the backend only
+- Never commit `.env`
+- Never put API keys directly in frontend code
+- Keep secrets on the backend only
 
-Current Limitations
+## Current Limitations
 
 This is an early version.
 
@@ -171,29 +212,24 @@ The race predictions are estimates and should not be treated as guaranteed race 
 
 The AI summary is meant to explain the data and provide general training insight. It is not medical advice.
 
-Future Improvements
+## Future Improvements
 
 Planned improvements:
 
-* Connect to the Strava API
-* Pull real running activity data
-* Add weekly mileage trends
-* Add pace trend charts
-* Add heart rate and elevation analysis
-* Improve race prediction logic
-* Add user authentication
-* Save athlete profiles
-* Add deployment
+- Connect to the Strava API
+- Pull real running activity data
+- Add weekly mileage trends
+- Add pace trend charts
+- Add heart rate and elevation analysis
+- Improve race prediction logic
+- Add user authentication
+- Save athlete profiles
+- Add deployment
 
-Notes
+## Notes
 
 This project uses a science-based race prediction formula as a starting point, then uses AI to provide context around the estimate.
 
 The formula gives a baseline estimate.
 
 The AI helps explain whether that estimate seems realistic based on training load, long run distance, consistency, and goal race timing.
-
-Then save:
-
-```text
-Command + S
