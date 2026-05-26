@@ -9,6 +9,10 @@ export function calculateTotalMiles(runs: Run[]) {
 
 //calculate longest run
 export function calculateLongestRun(runs: Run[]) {
+  if (runs.length === 0) {
+    return 0;
+  }
+
   return Math.max(...runs.map((run) => run.distanceMiles));
 }
 
@@ -53,9 +57,11 @@ export function calculateFitnessScore(runs: Run[]) {
 
 //calculate race predictions Riegel Formula
 function convertMinutesToRaceTime(totalMinutes: number) {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = Math.floor(totalMinutes % 60);
-  const seconds = Math.round((totalMinutes - Math.floor(totalMinutes)) * 60);
+  const totalSeconds = Math.round(totalMinutes * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const remainingSeconds = totalSeconds % 3600;
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
 
   if (hours > 0) {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
@@ -94,9 +100,23 @@ function convertRaceDistanceToMiles(raceDistance: string) {
 //
 
 export function convertRaceTimeToMinutes(raceTime: string) {
-  const timeParts = raceTime.split(":").map(Number);
+  const rawParts = raceTime.trim().split(":");
 
-  const hasInvalidNumber = timeParts.some((part) => Number.isNaN(part));
+  if (rawParts.length !== 2 && rawParts.length !== 3) {
+    return 0;
+  }
+
+  const hasEmptyPart = rawParts.some((part) => part.trim() === "");
+
+  if (hasEmptyPart) {
+    return 0;
+  }
+
+  const timeParts = rawParts.map(Number);
+
+  const hasInvalidNumber = timeParts.some(
+    (part) => !Number.isFinite(part) || part < 0 || !Number.isInteger(part)
+  );
 
   if (hasInvalidNumber) {
     return 0;
@@ -229,4 +249,3 @@ export function calculateTrainingLoad(runs: Run[]) {
 }
 
 //Select goal time
-

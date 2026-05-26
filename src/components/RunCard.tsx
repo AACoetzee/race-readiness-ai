@@ -18,7 +18,10 @@ function RunCard({ run }: RunCardProps) {
           <p>{run.pace}</p>
         </div>
 
-        <span className="pill">{run.effort}</span>
+        <div className="runPills">
+          {run.isRace && <span className="pill racePill">Race</span>}
+          <span className="pill">{run.effort}</span>
+        </div>
       </div>
     </div>
   );

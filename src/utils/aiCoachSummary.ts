@@ -63,7 +63,7 @@ export function generateAICoachSummary({
         ? "You have a good base, but there is room to improve."
         : "You are still building your running base.",
 
-    summary: `Based on ${totalMiles} miles this week, ${numberOfRuns} runs, and a longest run of ${longestRun} miles, your current training load looks ${trainingLoad.toLowerCase()}. Your estimated ${goalRace} time is ${selectedGoalTime}.`,
+    summary: `Based on ${totalMiles} miles in your most recent 7-day training window, ${numberOfRuns} runs, and a longest run of ${longestRun} miles, your current training load looks ${trainingLoad.toLowerCase()}. Your estimated ${goalRace} time is ${selectedGoalTime}.`,
 
     strengths,
     risks,

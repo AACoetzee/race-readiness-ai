@@ -4,6 +4,11 @@ export type Run = {
   distanceMiles: number;
   pace: string;
   effort: "Easy" | "Moderate" | "Hard";
+  elapsedTimeSeconds?: number;
+  isRace?: boolean;
+  raceDistance?: "5K" | "10K" | "Half Marathon" | "Marathon";
+  source?: "Sample" | "Strava" | "Import";
+  stravaWorkoutType?: number;
 };
 
 export const sampleRuns: Run[] = [
