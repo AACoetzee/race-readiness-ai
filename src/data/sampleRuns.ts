@@ -5,6 +5,8 @@ export type Run = {
   pace: string;
   effort: "Easy" | "Moderate" | "Hard";
   elapsedTimeSeconds?: number;
+  averageHeartRate?: number;
+  maxHeartRate?: number;
   isRace?: boolean;
   raceDistance?: "5K" | "10K" | "Half Marathon" | "Marathon";
   source?: "Sample" | "Strava" | "Import";

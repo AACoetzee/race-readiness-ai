@@ -99,6 +99,25 @@ function convertRaceDistanceToMiles(raceDistance: string) {
 }
 //
 
+function getRunTimeMs(run: Run) {
+  return new Date(`${run.date}T00:00:00`).getTime();
+}
+
+function getTrainingWeeks(runs: Run[]) {
+  if (runs.length < 2) {
+    return 1;
+  }
+
+  const runTimes = runs.map(getRunTimeMs);
+  const firstRunTime = Math.min(...runTimes);
+  const lastRunTime = Math.max(...runTimes);
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+  const spanDays =
+    Math.round((lastRunTime - firstRunTime) / millisecondsPerDay) + 1;
+
+  return Math.max(1, spanDays / 7);
+}
+
 export function convertRaceTimeToMinutes(raceTime: string) {
   const rawParts = raceTime.trim().split(":");
 
@@ -150,7 +169,8 @@ export function convertRaceTimeToMinutes(raceTime: string) {
 export function calculateRacePredictions(
   runs: Run[],
   pastRaceDistance: string,
-  pastRaceTime: string
+  pastRaceTime: string,
+  weeksUntilGoalRace = 0
 ) {
   const recentEffortDistanceMiles = convertRaceDistanceToMiles(pastRaceDistance);
   const recentEffortTimeMinutes = convertRaceTimeToMinutes(pastRaceTime);
@@ -158,6 +178,15 @@ export function calculateRacePredictions(
   const totalMiles = calculateTotalMiles(runs);
   const longestRun = calculateLongestRun(runs);
   const numberOfRuns = calculateNumberOfRuns(runs);
+  const trainingWeeks = getTrainingWeeks(runs);
+  const averageWeeklyMiles = totalMiles / trainingWeeks;
+  const averageWeeklyRuns = numberOfRuns / trainingWeeks;
+  const hasTimeToBuild = weeksUntilGoalRace >= 8;
+  const penaltyWeight = hasTimeToBuild ? 0.4 : 1;
+
+  function applyPenalty(minutes: number, penalty: number) {
+    return minutes * (1 + (penalty - 1) * penaltyWeight);
+  }
 
   const fiveKMinutes = predictRaceTime(
     recentEffortDistanceMiles,
@@ -183,29 +212,29 @@ export function calculateRacePredictions(
     26.2
   );
 
-  if (totalMiles < 20) {
-    halfMarathonMinutes *= 1.08;
-    marathonMinutes *= 1.15;
+  if (averageWeeklyMiles < 20) {
+    halfMarathonMinutes = applyPenalty(halfMarathonMinutes, 1.08);
+    marathonMinutes = applyPenalty(marathonMinutes, 1.15);
   }
 
-  if (totalMiles >= 20 && totalMiles < 35) {
-    halfMarathonMinutes *= 1.03;
-    marathonMinutes *= 1.08;
+  if (averageWeeklyMiles >= 20 && averageWeeklyMiles < 35) {
+    halfMarathonMinutes = applyPenalty(halfMarathonMinutes, 1.03);
+    marathonMinutes = applyPenalty(marathonMinutes, 1.08);
   }
 
   if (longestRun < 8) {
-    halfMarathonMinutes *= 1.05;
-    marathonMinutes *= 1.15;
+    halfMarathonMinutes = applyPenalty(halfMarathonMinutes, 1.05);
+    marathonMinutes = applyPenalty(marathonMinutes, 1.15);
   }
 
   if (longestRun >= 8 && longestRun < 14) {
-    marathonMinutes *= 1.08;
+    marathonMinutes = applyPenalty(marathonMinutes, 1.08);
   }
 
-  if (numberOfRuns < 4) {
-    tenKMinutes *= 1.02;
-    halfMarathonMinutes *= 1.04;
-    marathonMinutes *= 1.06;
+  if (averageWeeklyRuns < 4) {
+    tenKMinutes = applyPenalty(tenKMinutes, 1.02);
+    halfMarathonMinutes = applyPenalty(halfMarathonMinutes, 1.04);
+    marathonMinutes = applyPenalty(marathonMinutes, 1.06);
   }
 
   return {

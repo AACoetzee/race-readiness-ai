@@ -53,6 +53,57 @@ const aiSummarySchema = {
   },
 };
 
+const trainingPlanSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "title",
+    "overview",
+    "confidence",
+    "heartRateGuidance",
+    "assumptions",
+    "weeks",
+  ],
+  properties: {
+    title: { type: "string" },
+    overview: { type: "string" },
+    confidence: { type: "string", enum: ["Low", "Medium", "High"] },
+    heartRateGuidance: {
+      type: "array",
+      items: { type: "string" },
+    },
+    assumptions: {
+      type: "array",
+      items: { type: "string" },
+    },
+    weeks: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "week",
+          "phase",
+          "targetMiles",
+          "longRunMiles",
+          "workoutFocus",
+          "easyRunGuidance",
+          "notes",
+        ],
+        properties: {
+          week: { type: "integer" },
+          phase: { type: "string" },
+          targetMiles: { type: "number" },
+          longRunMiles: { type: "number" },
+          workoutFocus: { type: "string" },
+          easyRunGuidance: { type: "string" },
+          notes: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
 const fallbackSummary = {
   headline: "AI summary is unavailable right now.",
   summary: "The app could not generate an AI summary. Try again later.",
@@ -62,6 +113,15 @@ const fallbackSummary = {
   strengths: [],
   risks: [],
   suggestions: [],
+};
+
+const fallbackTrainingPlan = {
+  title: "Training plan unavailable",
+  overview: "The app could not generate an AI training plan. Try again later.",
+  confidence: "Low",
+  heartRateGuidance: [],
+  assumptions: [],
+  weeks: [],
 };
 
 app.use(
@@ -76,7 +136,7 @@ app.use(
     },
   })
 );
-app.use(express.json({ limit: "20kb" }));
+app.use(express.json({ limit: "100kb" }));
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({
@@ -147,6 +207,8 @@ function mapStravaActivityToRun(activity) {
     pace: formatPace(paceMinutesPerMile),
     effort: estimateEffort(activity),
     elapsedTimeSeconds: isRace ? activity.elapsed_time : activity.moving_time,
+    averageHeartRate: activity.average_heartrate,
+    maxHeartRate: activity.max_heartrate,
     isRace,
     raceDistance: isRace ? getRaceDistance(distanceMiles) : undefined,
     source: "Strava",
@@ -184,6 +246,74 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function convertRaceTimeToMinutes(raceTime) {
+  if (!isNonEmptyString(raceTime)) {
+    return 0;
+  }
+
+  const parts = raceTime.split(":").map(Number);
+
+  if (
+    ![2, 3].includes(parts.length) ||
+    parts.some((part) => !Number.isFinite(part) || part < 0)
+  ) {
+    return 0;
+  }
+
+  if (parts.length === 2) {
+    const [minutes, seconds] = parts;
+
+    return minutes + seconds / 60;
+  }
+
+  const [hours, minutes, seconds] = parts;
+
+  return hours * 60 + minutes + seconds / 60;
+}
+
+function convertMinutesToRaceTime(totalMinutes) {
+  const totalSeconds = Math.round(totalMinutes * 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const remainingSeconds = totalSeconds % 3600;
+  const minutes = Math.floor(remainingSeconds / 60);
+  const seconds = remainingSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function constrainAdjustedGoalTime(summary, context) {
+  const formulaMinutes = convertRaceTimeToMinutes(context.selectedGoalTime);
+  const adjustedMinutes = convertRaceTimeToMinutes(summary.aiAdjustedGoalTime);
+
+  if (formulaMinutes <= 0 || adjustedMinutes <= 0) {
+    return summary;
+  }
+
+  const hasRecentRaceAnchor = context.weeksSincePastRace <= 12;
+  const hasTimeToTrain = context.weeksUntilGoalRace >= 8;
+  const hasReasonableBase = context.trendAverageWeeklyMiles >= 20;
+
+  if (!hasRecentRaceAnchor || !hasTimeToTrain || !hasReasonableBase) {
+    return summary;
+  }
+
+  const maxAllowedSlowdown = formulaMinutes * 1.03;
+
+  if (adjustedMinutes <= maxAllowedSlowdown) {
+    return summary;
+  }
+
+  return {
+    ...summary,
+    aiAdjustedGoalTime: convertMinutesToRaceTime(maxAllowedSlowdown),
+    confidence: summary.confidence === "Low" ? "Medium" : summary.confidence,
+  };
 }
 
 async function getStravaAccessToken() {
@@ -309,6 +439,33 @@ function validateAiSummaryRequest(body) {
     errors.push("fitnessScore must be a number between 0 and 100.");
   }
 
+  if (
+    !Number.isInteger(body.trendWindowDays) ||
+    body.trendWindowDays < 30 ||
+    body.trendWindowDays > 120
+  ) {
+    errors.push("trendWindowDays must be an integer between 30 and 120.");
+  }
+
+  if (!isFiniteNumber(body.trendTotalMiles) || body.trendTotalMiles < 0) {
+    errors.push("trendTotalMiles must be a non-negative number.");
+  }
+
+  if (!isFiniteNumber(body.trendLongestRun) || body.trendLongestRun < 0) {
+    errors.push("trendLongestRun must be a non-negative number.");
+  }
+
+  if (!Number.isInteger(body.trendNumberOfRuns) || body.trendNumberOfRuns < 0) {
+    errors.push("trendNumberOfRuns must be a non-negative integer.");
+  }
+
+  if (
+    !isFiniteNumber(body.trendAverageWeeklyMiles) ||
+    body.trendAverageWeeklyMiles < 0
+  ) {
+    errors.push("trendAverageWeeklyMiles must be a non-negative number.");
+  }
+
   if (!validTrainingLoads.includes(body.trainingLoad)) {
     errors.push("trainingLoad must be Low, Moderate, or High.");
   }
@@ -329,8 +486,24 @@ function validateAiSummaryRequest(body) {
     errors.push("pastRaceTime is required.");
   }
 
+  if (!isNonEmptyString(body.raceDataSource)) {
+    errors.push("raceDataSource is required.");
+  }
+
   if (!isValidDateString(body.pastRaceDate)) {
     errors.push("pastRaceDate must use YYYY-MM-DD format.");
+  }
+
+  if (!isValidDateString(body.currentDate)) {
+    errors.push("currentDate must use YYYY-MM-DD format.");
+  }
+
+  if (!Number.isInteger(body.daysSincePastRace) || body.daysSincePastRace < 0) {
+    errors.push("daysSincePastRace must be a non-negative integer.");
+  }
+
+  if (!Number.isInteger(body.weeksSincePastRace) || body.weeksSincePastRace < 0) {
+    errors.push("weeksSincePastRace must be a non-negative integer.");
   }
 
   if (!isValidDateString(body.goalRaceDate)) {
@@ -339,6 +512,80 @@ function validateAiSummaryRequest(body) {
 
   if (!Number.isInteger(body.weeksUntilGoalRace) || body.weeksUntilGoalRace < 0) {
     errors.push("weeksUntilGoalRace must be a non-negative integer.");
+  }
+
+  return errors;
+}
+
+function isValidRun(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    isValidDateString(value.date) &&
+    isNonEmptyString(value.type) &&
+    isFiniteNumber(value.distanceMiles) &&
+    value.distanceMiles > 0 &&
+    isNonEmptyString(value.pace) &&
+    ["Easy", "Moderate", "Hard"].includes(value.effort) &&
+    (value.elapsedTimeSeconds === undefined ||
+      (isFiniteNumber(value.elapsedTimeSeconds) && value.elapsedTimeSeconds > 0)) &&
+    (value.averageHeartRate === undefined ||
+      (isFiniteNumber(value.averageHeartRate) && value.averageHeartRate > 0)) &&
+    (value.maxHeartRate === undefined ||
+      (isFiniteNumber(value.maxHeartRate) && value.maxHeartRate > 0)) &&
+    (value.isRace === undefined || typeof value.isRace === "boolean") &&
+    (value.raceDistance === undefined ||
+      ["5K", "10K", "Half Marathon", "Marathon"].includes(value.raceDistance))
+  );
+}
+
+function validateTrainingPlanRequest(body) {
+  const errors = [];
+  const validGoalRaces = ["5K", "10K", "Half Marathon", "Marathon"];
+
+  if (!validGoalRaces.includes(body.goalRace)) {
+    errors.push("goalRace must be 5K, 10K, Half Marathon, or Marathon.");
+  }
+
+  if (!isValidDateString(body.goalRaceDate)) {
+    errors.push("goalRaceDate must use YYYY-MM-DD format.");
+  }
+
+  if (!isValidDateString(body.currentDate)) {
+    errors.push("currentDate must use YYYY-MM-DD format.");
+  }
+
+  if (!Number.isInteger(body.weeksUntilGoalRace) || body.weeksUntilGoalRace < 0) {
+    errors.push("weeksUntilGoalRace must be a non-negative integer.");
+  }
+
+  if (
+    !isFiniteNumber(body.trendAverageWeeklyMiles) ||
+    body.trendAverageWeeklyMiles < 0
+  ) {
+    errors.push("trendAverageWeeklyMiles must be a non-negative number.");
+  }
+
+  if (!isFiniteNumber(body.trendLongestRun) || body.trendLongestRun < 0) {
+    errors.push("trendLongestRun must be a non-negative number.");
+  }
+
+  if (!Number.isInteger(body.trendNumberOfRuns) || body.trendNumberOfRuns < 0) {
+    errors.push("trendNumberOfRuns must be a non-negative integer.");
+  }
+
+  if (!isNonEmptyString(body.selectedGoalTime)) {
+    errors.push("selectedGoalTime is required.");
+  }
+
+  if (!isNonEmptyString(body.raceDataSource)) {
+    errors.push("raceDataSource is required.");
+  }
+
+  if (!Array.isArray(body.trendRuns) || body.trendRuns.length === 0) {
+    errors.push("trendRuns must include at least one run.");
+  } else if (!body.trendRuns.every(isValidRun)) {
+    errors.push("trendRuns contains invalid run data.");
   }
 
   return errors;
@@ -364,10 +611,95 @@ function validateAiSummary(summary) {
   );
 }
 
+function validateTrainingPlan(plan, weeksUntilGoalRace) {
+  if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+    return false;
+  }
+
+  const maxWeeks = Math.min(Math.max(weeksUntilGoalRace, 1), 24);
+
+  return (
+    isNonEmptyString(plan.title) &&
+    isNonEmptyString(plan.overview) &&
+    ["Low", "Medium", "High"].includes(plan.confidence) &&
+    Array.isArray(plan.heartRateGuidance) &&
+    plan.heartRateGuidance.every(isNonEmptyString) &&
+    Array.isArray(plan.assumptions) &&
+    plan.assumptions.every(isNonEmptyString) &&
+    Array.isArray(plan.weeks) &&
+    plan.weeks.length > 0 &&
+    plan.weeks.length <= maxWeeks &&
+    plan.weeks.every(
+      (week, index) =>
+        week &&
+        typeof week === "object" &&
+        week.week === index + 1 &&
+        isNonEmptyString(week.phase) &&
+        isFiniteNumber(week.targetMiles) &&
+        week.targetMiles >= 0 &&
+        isFiniteNumber(week.longRunMiles) &&
+        week.longRunMiles >= 0 &&
+        isNonEmptyString(week.workoutFocus) &&
+        isNonEmptyString(week.easyRunGuidance) &&
+        isNonEmptyString(week.notes)
+    )
+  );
+}
+
+function getTrainingPlanLongRunCap(goalRace) {
+  if (goalRace === "Marathon") {
+    return 20;
+  }
+
+  if (goalRace === "Half Marathon") {
+    return 14;
+  }
+
+  if (goalRace === "10K") {
+    return 8;
+  }
+
+  return 6;
+}
+
+function normalizeTrainingPlan(plan, goalRace, trendAverageWeeklyMiles) {
+  const longRunCap = getTrainingPlanLongRunCap(goalRace);
+
+  return {
+    ...plan,
+    weeks: plan.weeks.map((week) => {
+      const targetMiles = Math.max(0, Number(week.targetMiles.toFixed(1)));
+      const weeklyLongRunCap = Math.min(longRunCap, Math.max(3, targetMiles * 0.45));
+      const longRunMiles = Math.max(
+        0,
+        Number(Math.min(week.longRunMiles, weeklyLongRunCap).toFixed(1))
+      );
+
+      return {
+        ...week,
+        targetMiles,
+        longRunMiles,
+      };
+    }),
+    assumptions: [
+      ...plan.assumptions,
+      `${goalRace} long runs are capped near ${longRunCap} miles; race-tagged activities inform fitness but are not treated as normal weekly long runs.`,
+      `Weekly mileage starts from about ${trendAverageWeeklyMiles.toFixed(1)} miles per week based on the recent training trend.`,
+    ].slice(0, 6),
+  };
+}
+
 function sendFallbackSummary(res, status, summary) {
   res.status(status).json({
     ...fallbackSummary,
     ...summary,
+  });
+}
+
+function sendFallbackTrainingPlan(res, status, plan) {
+  res.status(status).json({
+    ...fallbackTrainingPlan,
+    ...plan,
   });
 }
 
@@ -504,11 +836,20 @@ app.post("/api/ai-summary", async (req, res) => {
     numberOfRuns,
     fitnessScore,
     trainingLoad,
+    trendWindowDays,
+    trendTotalMiles,
+    trendLongestRun,
+    trendNumberOfRuns,
+    trendAverageWeeklyMiles,
     goalRace,
     selectedGoalTime,
     pastRaceDistance,
     pastRaceTime,
     pastRaceDate,
+    raceDataSource,
+    currentDate,
+    daysSincePastRace,
+    weeksSincePastRace,
     goalRaceDate,
     weeksUntilGoalRace,
   } = req.body;
@@ -519,11 +860,20 @@ app.post("/api/ai-summary", async (req, res) => {
     numberOfRuns,
     fitnessScore,
     trainingLoad,
+    trendWindowDays,
+    trendTotalMiles,
+    trendLongestRun,
+    trendNumberOfRuns,
+    trendAverageWeeklyMiles,
     goalRace,
     selectedGoalTime,
     pastRaceDistance,
     pastRaceTime,
     pastRaceDate,
+    raceDataSource,
+    currentDate,
+    daysSincePastRace,
+    weeksSincePastRace,
     goalRaceDate,
     weeksUntilGoalRace,
   };
@@ -538,6 +888,20 @@ Analyze this runner's current fitness using the data below.
 
 Data:
 ${JSON.stringify(runnerData, null, 2)}
+
+Important date facts:
+- Today's date is ${currentDate}.
+- The past race was ${daysSincePastRace} days ago, which is about ${weeksSincePastRace} weeks ago.
+- The goal race is ${weeksUntilGoalRace} weeks away.
+
+Use these supplied date facts exactly. Do not recalculate or reinterpret the date gaps.
+
+Prediction rules:
+- The formula estimate is anchored to the race-tagged result and should be treated as the baseline.
+- Use the ${trendWindowDays}-day trend data to judge confidence and realism.
+- Do not judge race readiness from only the most recent 7 days.
+- If the race tag is recent, the goal race is many weeks away, and the ${trendWindowDays}-day average weekly mileage is solid, do not make the adjusted goal time much slower than the formula estimate.
+- If you do slow the goal time, explain the specific trend reason.
 
 Use the formula estimate as the starting point, but adjust the goal time if the training data or race date makes it too aggressive or too conservative.
 
@@ -566,10 +930,123 @@ Do not overpromise race results.
       throw new Error("AI response did not match the expected summary shape.");
     }
 
-    res.json(parsed);
+    const constrainedSummary = constrainAdjustedGoalTime(parsed, runnerData);
+
+    res.json({
+      ...constrainedSummary,
+      dateAssessment: `The ${raceDataSource.toLowerCase()} race was about ${weeksSincePastRace} weeks ago, and the goal race is ${weeksUntilGoalRace} weeks away.`,
+    });
   } catch (error) {
     console.error(error);
     sendFallbackSummary(res, 500);
+  }
+});
+
+app.post("/api/training-plan", async (req, res) => {
+  const validationErrors = validateTrainingPlanRequest(req.body);
+
+  if (validationErrors.length > 0) {
+    sendFallbackTrainingPlan(res, 400, {
+      overview: validationErrors.join(" "),
+    });
+    return;
+  }
+
+  if (!openai) {
+    sendFallbackTrainingPlan(res, 503, {
+      overview: "The backend is missing an OpenAI API key.",
+    });
+    return;
+  }
+
+  const {
+    goalRace,
+    goalRaceDate,
+    currentDate,
+    weeksUntilGoalRace,
+    trendAverageWeeklyMiles,
+    trendLongestRun,
+    trendNumberOfRuns,
+    selectedGoalTime,
+    raceDataSource,
+    mostRecentRace,
+    observedMaxHeartRate,
+    trendRuns,
+  } = req.body;
+  const planWeeks = Math.min(Math.max(weeksUntilGoalRace, 1), 24);
+  const runnerData = {
+    goalRace,
+    goalRaceDate,
+    currentDate,
+    weeksUntilGoalRace,
+    planWeeks,
+    trendAverageWeeklyMiles,
+    trendLongestRun,
+    trendNumberOfRuns,
+    selectedGoalTime,
+    raceDataSource,
+    mostRecentRace,
+    observedMaxHeartRate,
+    trendRuns: trendRuns.map((run) => ({
+      date: run.date,
+      type: run.type,
+      distanceMiles: run.distanceMiles,
+      pace: run.pace,
+      effort: run.effort,
+      elapsedTimeSeconds: run.elapsedTimeSeconds,
+      averageHeartRate: run.averageHeartRate,
+      maxHeartRate: run.maxHeartRate,
+      isRace: run.isRace,
+      raceDistance: run.raceDistance,
+    })),
+  };
+
+  try {
+    const response = await openai.responses.create({
+      model: AI_MODEL,
+      input: `
+You are a running coach creating a basic race training plan.
+
+Generate a simple week-by-week plan using the runner data below.
+
+Data:
+${JSON.stringify(runnerData, null, 2)}
+
+Rules:
+- Return exactly ${planWeeks} weeks.
+- Use the 90-day non-race training run list, average weekly mileage, longest non-race run, run frequency, recent race tag, and observed heart-rate data.
+- The supplied mostRecentRace is a fitness anchor, not a normal long-run training baseline.
+- Heart-rate data is mostly run-level average/max data, not full time-in-zone data. Do not pretend you know exact miles in each zone.
+- Use heart rate as guidance: easy runs should usually stay conversational and mostly Z1/Z2; workouts may touch Z3/Z4/Z5 depending on the race.
+- Keep the plan basic, realistic, and safe: one long run, mostly easy running, at most two quality sessions per week.
+- Build gradually from the current 90-day mileage. Avoid huge jumps from the runner's current baseline.
+- Include cutback/recovery weeks when useful.
+- Taper before race day.
+- Long-run caps: 5K about 6 miles, 10K about 8 miles, Half Marathon about 14 miles, Marathon about 20 miles.
+- For this ${goalRace}, do not recommend a long run above ${getTrainingPlanLongRunCap(goalRace)} miles.
+- If the goal race is soon or the data is thin, reduce confidence and make the plan conservative.
+- Do not include medical advice. Do not overpromise results.
+      `,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "race_readiness_training_plan",
+          schema: trainingPlanSchema,
+          strict: true,
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.output_text);
+
+    if (!validateTrainingPlan(parsed, weeksUntilGoalRace)) {
+      throw new Error("AI response did not match the expected training plan shape.");
+    }
+
+    res.json(normalizeTrainingPlan(parsed, goalRace, trendAverageWeeklyMiles));
+  } catch (error) {
+    console.error(error);
+    sendFallbackTrainingPlan(res, 500);
   }
 });
 

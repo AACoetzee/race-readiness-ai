@@ -15,14 +15,44 @@ import {
 } from "./utils/fitnessCalculations";
 
 import StatCard from "./components/StatCard";
-import RacePrediction from "./components/RacePrediction";
 import RunCard from "./components/RunCard";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const AI_SUMMARY_URL = `${API_BASE_URL}/api/ai-summary`;
+const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
 const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
+const TREND_WINDOW_DAYS = 90;
+type PageView = "dashboard" | "trainingPlan";
+
+type HeartRateZone = {
+  name: string;
+  label: string;
+  range: string;
+  description: string;
+};
+
+type PlanWeek = {
+  week: number;
+  phase: string;
+  targetMiles: number;
+  longRunMiles: number;
+  workoutFocus: string;
+  easyRunGuidance: string;
+  notes: string;
+};
+
+type TrainingPlan = {
+  title: string;
+  overview: string;
+  confidence: "Low" | "Medium" | "High";
+  assumptions: string[];
+  heartRateMax: number | null;
+  heartRateGuidance: string[];
+  heartRateZones: HeartRateZone[];
+  weeks: PlanWeek[];
+};
 
 function isRun(value: unknown): value is Run {
   if (!value || typeof value !== "object") {
@@ -45,7 +75,12 @@ function isRun(value: unknown): value is Run {
         run.elapsedTimeSeconds > 0)) &&
     (run.isRace === undefined || typeof run.isRace === "boolean") &&
     (run.raceDistance === undefined ||
-      ["5K", "10K", "Half Marathon", "Marathon"].includes(run.raceDistance))
+      ["5K", "10K", "Half Marathon", "Marathon"].includes(run.raceDistance)) &&
+    (run.averageHeartRate === undefined ||
+      (typeof run.averageHeartRate === "number" &&
+        Number.isFinite(run.averageHeartRate))) &&
+    (run.maxHeartRate === undefined ||
+      (typeof run.maxHeartRate === "number" && Number.isFinite(run.maxHeartRate)))
   );
 }
 
@@ -53,19 +88,118 @@ function getRunTimeMs(run: Run) {
   return new Date(`${run.date}T00:00:00`).getTime();
 }
 
-function getTrainingWindowRuns(runs: Run[]) {
+function getWindowRuns(runs: Run[], windowDays: number) {
   if (runs.length === 0) {
     return [];
   }
 
   const latestRunTime = Math.max(...runs.map(getRunTimeMs));
-  const trainingWindowStart = latestRunTime - (TRAINING_WINDOW_DAYS - 1) * 24 * 60 * 60 * 1000;
+  const trainingWindowStart = latestRunTime - (windowDays - 1) * 24 * 60 * 60 * 1000;
 
   return runs.filter((run) => {
     const runTime = getRunTimeMs(run);
 
     return runTime >= trainingWindowStart && runTime <= latestRunTime;
   });
+}
+
+function getAverageWeeklyMiles(runs: Run[], windowDays: number) {
+  return calculateTotalMiles(runs) / (windowDays / 7);
+}
+
+function getObservedMaxHeartRate(runs: Run[]) {
+  const heartRates = runs.flatMap((run) => [
+    run.maxHeartRate,
+    run.averageHeartRate,
+  ]);
+  const validHeartRates = heartRates.filter(
+    (heartRate): heartRate is number =>
+      typeof heartRate === "number" && Number.isFinite(heartRate)
+  );
+
+  return validHeartRates.length > 0 ? Math.max(...validHeartRates) : null;
+}
+
+function formatHeartRateRange(
+  maxHeartRate: number | null,
+  minPercent: number,
+  maxPercent: number
+) {
+  if (!maxHeartRate) {
+    return "Needs HR data";
+  }
+
+  const min = Math.round(maxHeartRate * minPercent);
+  const max = Math.round(maxHeartRate * maxPercent);
+
+  return `${min}-${max} bpm`;
+}
+
+function createHeartRateZones(maxHeartRate: number | null): HeartRateZone[] {
+  return [
+    {
+      name: "Z1",
+      label: "Recovery",
+      range: formatHeartRateRange(maxHeartRate, 0.5, 0.6),
+      description: "Very easy days and warmups",
+    },
+    {
+      name: "Z2",
+      label: "Easy aerobic",
+      range: formatHeartRateRange(maxHeartRate, 0.6, 0.7),
+      description: "Most normal mileage",
+    },
+    {
+      name: "Z3",
+      label: "Steady",
+      range: formatHeartRateRange(maxHeartRate, 0.7, 0.8),
+      description: "Controlled moderate running",
+    },
+    {
+      name: "Z4",
+      label: "Threshold",
+      range: formatHeartRateRange(maxHeartRate, 0.8, 0.9),
+      description: "Tempo and longer intervals",
+    },
+    {
+      name: "Z5",
+      label: "Hard",
+      range: formatHeartRateRange(maxHeartRate, 0.9, 1),
+      description: "Short reps and race efforts",
+    },
+  ];
+}
+
+function isTrainingPlanResponse(value: unknown): value is Omit<
+  TrainingPlan,
+  "heartRateMax" | "heartRateZones"
+> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const plan = value as Omit<TrainingPlan, "heartRateMax" | "heartRateZones">;
+
+  return (
+    typeof plan.title === "string" &&
+    typeof plan.overview === "string" &&
+    ["Low", "Medium", "High"].includes(plan.confidence) &&
+    Array.isArray(plan.heartRateGuidance) &&
+    plan.heartRateGuidance.every((item) => typeof item === "string") &&
+    Array.isArray(plan.assumptions) &&
+    plan.assumptions.every((item) => typeof item === "string") &&
+    Array.isArray(plan.weeks) &&
+    plan.weeks.every(
+      (week) =>
+        typeof week.week === "number" &&
+        typeof week.phase === "string" &&
+        typeof week.targetMiles === "number" &&
+        typeof week.longRunMiles === "number" &&
+        typeof week.workoutFocus === "string" &&
+        typeof week.easyRunGuidance === "string" &&
+        typeof week.notes === "string"
+    )
+  );
 }
 
 function getMostRecentRace(runs: Run[]) {
@@ -90,6 +224,25 @@ function formatMiles(miles: number) {
   return Number(miles.toFixed(2)).toString();
 }
 
+function formatDateForInput(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function getDaysBetweenDates(startDate: string, endDate: Date) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(formatDateForInput(endDate) + "T00:00:00");
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+
+  return Math.max(
+    0,
+    Math.round((end.getTime() - start.getTime()) / millisecondsPerDay)
+  );
+}
+
 function App() {
 const [goalRace, setGoalRace] = useState("Half Marathon");
 const [pastRaceDistance, setPastRaceDistance] = useState("5K");
@@ -98,6 +251,9 @@ const [runs, setRuns] = useState<Run[]>(sampleRuns);
 const [showAllRuns, setShowAllRuns] = useState(false);
 const [actionMessage, setActionMessage] = useState("");
 const [isImportingStrava, setIsImportingStrava] = useState(false);
+const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
+const [pageView, setPageView] = useState<PageView>("dashboard");
+const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
 const importInputRef = useRef<HTMLInputElement | null>(null);
 const goalSectionRef = useRef<HTMLElement | null>(null);
 const summarySectionRef = useRef<HTMLElement | null>(null);
@@ -108,6 +264,7 @@ const [goalRaceDate, setGoalRaceDate] = useState("2026-10-12");
 const today = new Date();
 
 const goalDate = new Date(goalRaceDate);
+const currentDate = formatDateForInput(today);
 
 const weeksUntilGoalRace = Math.max(
   0,
@@ -120,7 +277,8 @@ function clearAiSummary() {
   setAiSummary(null);
 }
 
-const trainingRuns = getTrainingWindowRuns(runs);
+const trainingRuns = getWindowRuns(runs, TRAINING_WINDOW_DAYS);
+const trendRuns = getWindowRuns(runs, TREND_WINDOW_DAYS);
 const mostRecentRace = getMostRecentRace(runs);
 const detectedRaceTime = mostRecentRace?.elapsedTimeSeconds
   ? formatElapsedTime(mostRecentRace.elapsedTimeSeconds)
@@ -130,17 +288,27 @@ const effectivePastRaceTime = detectedRaceTime ?? pastRaceTime;
 const effectivePastRaceDate = mostRecentRace?.date ?? pastRaceDate;
 const raceDataSource = mostRecentRace ? "Strava race tag" : "Manual entry";
 const isPastRaceTimeValid = convertRaceTimeToMinutes(effectivePastRaceTime) > 0;
+const daysSincePastRace = getDaysBetweenDates(effectivePastRaceDate, today);
+const weeksSincePastRace = Math.max(0, Math.round(daysSincePastRace / 7));
 
 const totalMiles = calculateTotalMiles(trainingRuns);
 const longestRun = calculateLongestRun(trainingRuns);
 const numberOfRuns = calculateNumberOfRuns(trainingRuns);
 const fitnessScore = calculateFitnessScore(trainingRuns);
+const trendTotalMiles = calculateTotalMiles(trendRuns);
+const trendLongestRun = calculateLongestRun(trendRuns);
+const trendNumberOfRuns = calculateNumberOfRuns(trendRuns);
+const trendAverageWeeklyMiles = getAverageWeeklyMiles(trendRuns, TREND_WINDOW_DAYS);
+const planTrendRuns = trendRuns.filter((run) => !run.isRace);
+const planSourceRuns = planTrendRuns.length > 0 ? planTrendRuns : trendRuns;
+const planTrendLongestRun = calculateLongestRun(planSourceRuns);
 
 const racePredictions = isPastRaceTimeValid
   ? calculateRacePredictions(
-      trainingRuns,
+      trendRuns,
       effectivePastRaceDistance,
-      effectivePastRaceTime
+      effectivePastRaceTime,
+      weeksUntilGoalRace
     )
   : null;
 
@@ -190,7 +358,7 @@ async function handleImportStravaRuns() {
   setActionMessage("Importing runs from Strava...");
 
   try {
-    const response = await fetch(STRAVA_RUNS_URL);
+    const response = await fetch(`${STRAVA_RUNS_URL}?per_page=100`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -260,15 +428,19 @@ function handleResetSampleData() {
 function handleExportReport() {
   const report = {
     generatedAt: new Date().toISOString(),
+    currentDate,
     goalRace,
     raceDataSource,
     pastRaceDistance: effectivePastRaceDistance,
     pastRaceTime: effectivePastRaceTime,
     pastRaceDate: effectivePastRaceDate,
+    daysSincePastRace,
+    weeksSincePastRace,
     goalRaceDate,
     weeksUntilGoalRace,
     stats: {
       trainingWindowDays: TRAINING_WINDOW_DAYS,
+      trendWindowDays: TREND_WINDOW_DAYS,
       totalMiles,
       longestRun,
       numberOfRuns,
@@ -280,6 +452,7 @@ function handleExportReport() {
     mostRecentRace,
     aiSummary,
     trainingRuns,
+    trendRuns,
     runs,
   };
 
@@ -294,6 +467,59 @@ function handleExportReport() {
   link.click();
   URL.revokeObjectURL(url);
   setActionMessage("Exported race-readiness-report.json.");
+}
+
+async function handleGenerateTrainingPlan() {
+  const observedMaxHeartRate = getObservedMaxHeartRate(planSourceRuns);
+
+  setIsGeneratingTrainingPlan(true);
+  setActionMessage("Generating your AI training plan...");
+
+  try {
+    const response = await fetch(TRAINING_PLAN_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        goalRace,
+        goalRaceDate,
+        currentDate,
+        weeksUntilGoalRace,
+        trendAverageWeeklyMiles,
+        trendLongestRun: planTrendLongestRun,
+        trendNumberOfRuns,
+        selectedGoalTime,
+        raceDataSource,
+        mostRecentRace,
+        observedMaxHeartRate,
+        trendRuns: planSourceRuns,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !isTrainingPlanResponse(data)) {
+      throw new Error(data.overview || "Could not generate a training plan.");
+    }
+
+    setTrainingPlan({
+      ...data,
+      heartRateMax: observedMaxHeartRate,
+      heartRateZones: createHeartRateZones(observedMaxHeartRate),
+    });
+    setPageView("trainingPlan");
+    setActionMessage("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch (error) {
+    console.error(error);
+    setActionMessage(
+      error instanceof Error
+        ? error.message
+        : "Could not generate a training plan."
+    );
+  } finally {
+    setIsGeneratingTrainingPlan(false);
+  }
 }
 
 async function handleGenerateAISummary() {
@@ -312,12 +538,20 @@ async function handleGenerateAISummary() {
          numberOfRuns,
          fitnessScore,
         trainingLoad,
+        trendWindowDays: TREND_WINDOW_DAYS,
+        trendTotalMiles,
+        trendLongestRun,
+        trendNumberOfRuns,
+        trendAverageWeeklyMiles,
         goalRace,
         selectedGoalTime,
         pastRaceDistance: effectivePastRaceDistance,
         pastRaceTime: effectivePastRaceTime,
         pastRaceDate: effectivePastRaceDate,
         raceDataSource,
+        currentDate,
+        daysSincePastRace,
+        weeksSincePastRace,
         goalRaceDate,
         weeksUntilGoalRace,
         trainingWindowDays: TRAINING_WINDOW_DAYS,
@@ -357,6 +591,119 @@ async function handleGenerateAISummary() {
   selectedGoalTime,
 });
 
+  if (pageView === "trainingPlan" && trainingPlan) {
+    return (
+      <main className="app">
+        <header className="topBar">
+          <div>
+            <p className="eyebrow">Training Plan</p>
+            <h1>{trainingPlan.title}</h1>
+          </div>
+
+          <div className="buttonRow">
+            <button
+              className="secondaryButton"
+              onClick={() => setPageView("dashboard")}
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </header>
+
+        <section className="planHero">
+          <div>
+            <p className="eyebrow">Plan Basis</p>
+            <h2>AI-built from Strava trends and HR signals</h2>
+            <p className="bodyText">{trainingPlan.overview}</p>
+          </div>
+
+          <div className="planMetricGrid">
+            <StatCard title="Weeks" value={`${trainingPlan.weeks.length}`} />
+            <StatCard title="90-Day Avg" value={`${formatMiles(trendAverageWeeklyMiles)} mi/wk`} />
+            <StatCard title="AI Confidence" value={trainingPlan.confidence} />
+            <StatCard
+              title="Observed Max HR"
+              value={trainingPlan.heartRateMax ? `${trainingPlan.heartRateMax} bpm` : "No HR"}
+            />
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="sectionHeader">
+            <div>
+              <h2>Heart Rate Guidance</h2>
+              <p>
+                These are guidance ranges from observed HR data, not exact time-in-zone totals.
+              </p>
+            </div>
+          </div>
+
+          <div className="zoneGrid">
+            {trainingPlan.heartRateZones.map((zone) => (
+              <div className="zoneBox" key={zone.name}>
+                <span>{zone.name}</span>
+                <strong>{zone.range}</strong>
+                <p>{zone.label}</p>
+                <small>{zone.description}</small>
+              </div>
+            ))}
+          </div>
+
+          <ul className="planAssumptions planGuidanceList">
+            {trainingPlan.heartRateGuidance.map((guidance) => (
+              <li key={guidance}>{guidance}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="card">
+          <div className="sectionHeader">
+            <div>
+              <h2>Basic Plan</h2>
+              <p>Use this as a simple guide, then adjust around fatigue, life, and workouts.</p>
+            </div>
+          </div>
+
+          <div className="planWeekList">
+            {trainingPlan.weeks.map((week) => (
+              <article className="planWeek" key={week.week}>
+                <div>
+                  <p className="cardLabel">Week {week.week}</p>
+                  <h3>{week.phase}</h3>
+                </div>
+
+                <div className="planWeekStats">
+                  <div>
+                    <span>Mileage</span>
+                    <strong>{week.targetMiles} mi</strong>
+                  </div>
+
+                  <div>
+                    <span>Long run</span>
+                    <strong>{week.longRunMiles} mi</strong>
+                  </div>
+                </div>
+
+                <p>{week.workoutFocus}</p>
+                <p>{week.easyRunGuidance}</p>
+                <p className="mutedText">{week.notes}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="card">
+          <h2>Assumptions</h2>
+          <ul className="planAssumptions">
+            {trainingPlan.assumptions.map((assumption) => (
+              <li key={assumption}>{assumption}</li>
+            ))}
+          </ul>
+        </section>
+      </main>
+    );
+  }
+
   return (
 
 
@@ -381,6 +728,13 @@ async function handleGenerateAISummary() {
           </button>
           <button className="primaryButton" onClick={handleAnalyzeFitness}>
             Analyze Fitness
+          </button>
+          <button
+            className="planButton"
+            onClick={handleGenerateTrainingPlan}
+            disabled={isGeneratingTrainingPlan}
+          >
+            {isGeneratingTrainingPlan ? "Generating..." : "Generate Training Plan"}
           </button>
         </div>
 
@@ -418,6 +772,7 @@ async function handleGenerateAISummary() {
     <StatCard title="7-Day Mileage" value={`${formatMiles(totalMiles)} mi`} />
     <StatCard title="Longest Run" value={`${formatMiles(longestRun)} mi`} />
     <StatCard title="Runs in 7 Days" value={`${numberOfRuns}`} />
+    <StatCard title="90-Day Avg" value={`${formatMiles(trendAverageWeeklyMiles)} mi/wk`} />
     <StatCard title="Training Load" value={trainingLoad} />
   </section>
 </div>
@@ -658,30 +1013,6 @@ async function handleGenerateAISummary() {
 
         </div>
 
-        <div className="card">
-          <h2>Race Potential</h2>
-          <p className="mutedText">Early estimate based on sample data.</p>
-
-          <div className="predictionList">
-            {racePredictions ? (
-  <>
-    <RacePrediction race="5K" time={racePredictions.fiveK} />
-    <RacePrediction race="10K" time={racePredictions.tenK} />
-    <RacePrediction race="Half Marathon" time={racePredictions.halfMarathon} />
-    <RacePrediction race="Marathon" time={racePredictions.marathon} />
-  </>
-) : (
-  <div className="emptyStateBox">
-    Enter a valid past race time to calculate race predictions.
-  </div>
-)}
-
-
-          </div>
-
-          
-
-        </div>
       </section>
 
       <section className="card" ref={summarySectionRef}>
