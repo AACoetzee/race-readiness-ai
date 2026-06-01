@@ -11,6 +11,8 @@ import {
   calculateRacePredictions,
   calculateFitnessBreakdown,
   calculateTrainingLoad,
+  calculateTrainingLoadMetrics,
+  calculateRunTrainingStress,
   convertRaceTimeToMinutes,
 } from "./utils/fitnessCalculations";
 
@@ -24,7 +26,7 @@ const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
 const TREND_WINDOW_DAYS = 90;
-type PageView = "dashboard" | "trainingPlan";
+type PageView = "dashboard" | "trainingPlan" | "activityDetail";
 
 type HeartRateZone = {
   name: string;
@@ -220,8 +222,36 @@ function formatElapsedTime(totalSeconds: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatOptionalElapsedTime(totalSeconds?: number) {
+  return totalSeconds ? formatElapsedTime(totalSeconds) : "Not available";
+}
+
 function formatMiles(miles: number) {
   return Number(miles.toFixed(2)).toString();
+}
+
+function formatOptionalHeartRate(heartRate?: number) {
+  return heartRate ? `${Math.round(heartRate)} bpm` : "No HR data";
+}
+
+function getRunStressLabel(stress: number) {
+  if (stress >= 14) {
+    return "Heavy";
+  }
+
+  if (stress >= 8) {
+    return "Moderate";
+  }
+
+  return "Light";
+}
+
+function getRunHeartRatePercent(run: Run, observedMaxHeartRate: number | null) {
+  if (!run.averageHeartRate || !observedMaxHeartRate) {
+    return "Not available";
+  }
+
+  return `${Math.round((run.averageHeartRate / observedMaxHeartRate) * 100)}% of observed max`;
 }
 
 function formatDateForInput(date: Date) {
@@ -254,6 +284,7 @@ const [isImportingStrava, setIsImportingStrava] = useState(false);
 const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
 const [pageView, setPageView] = useState<PageView>("dashboard");
 const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
+const [selectedRun, setSelectedRun] = useState<Run | null>(null);
 const importInputRef = useRef<HTMLInputElement | null>(null);
 const goalSectionRef = useRef<HTMLElement | null>(null);
 const summarySectionRef = useRef<HTMLElement | null>(null);
@@ -279,6 +310,7 @@ function clearAiSummary() {
 
 const trainingRuns = getWindowRuns(runs, TRAINING_WINDOW_DAYS);
 const trendRuns = getWindowRuns(runs, TREND_WINDOW_DAYS);
+const observedMaxHeartRate = getObservedMaxHeartRate(trendRuns);
 const mostRecentRace = getMostRecentRace(runs);
 const detectedRaceTime = mostRecentRace?.elapsedTimeSeconds
   ? formatElapsedTime(mostRecentRace.elapsedTimeSeconds)
@@ -314,6 +346,7 @@ const racePredictions = isPastRaceTimeValid
 
 const fitnessBreakdown = calculateFitnessBreakdown(trainingRuns);
 const trainingLoad = calculateTrainingLoad(trainingRuns);
+const trainingLoadMetrics = calculateTrainingLoadMetrics(trendRuns);
 
 const selectedGoalTime = racePredictions
   ? goalRace === "5K"
@@ -340,13 +373,22 @@ const [isLoadingAI, setIsLoadingAI] = useState(false);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
 
 function handleAnalyzeFitness() {
+  setPageView("dashboard");
   summarySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   setActionMessage("Jumped to your current fitness summary.");
 }
 
 function handleAddGoalRace() {
+  setPageView("dashboard");
   goalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   setActionMessage("Jumped to the goal race form.");
+}
+
+function handleSelectRun(run: Run) {
+  setSelectedRun(run);
+  setPageView("activityDetail");
+  setActionMessage("");
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function handleImportDataClick() {
@@ -370,6 +412,7 @@ async function handleImportStravaRuns() {
     }
 
     setRuns(data.runs);
+    setSelectedRun(null);
     setShowAllRuns(data.runs.length <= RECENT_RUN_LIMIT);
     const importedRace = getMostRecentRace(data.runs);
 
@@ -407,6 +450,7 @@ async function handleImportRuns(event: React.ChangeEvent<HTMLInputElement>) {
     }
 
     setRuns(parsed);
+    setSelectedRun(null);
     setShowAllRuns(parsed.length <= RECENT_RUN_LIMIT);
     clearAiSummary();
     setActionMessage(`Imported ${parsed.length} runs from ${file.name}.`);
@@ -420,6 +464,7 @@ async function handleImportRuns(event: React.ChangeEvent<HTMLInputElement>) {
 
 function handleResetSampleData() {
   setRuns(sampleRuns);
+  setSelectedRun(null);
   setShowAllRuns(false);
   clearAiSummary();
   setActionMessage("Sample run data restored.");
@@ -446,6 +491,7 @@ function handleExportReport() {
       numberOfRuns,
       fitnessScore,
       trainingLoad,
+      trainingLoadMetrics,
       fitnessBreakdown,
     },
     racePredictions,
@@ -590,6 +636,127 @@ async function handleGenerateAISummary() {
   goalRace,
   selectedGoalTime,
 });
+
+  if (pageView === "activityDetail" && selectedRun) {
+    const runStress = Number(calculateRunTrainingStress(selectedRun).toFixed(1));
+    const stressLabel = getRunStressLabel(runStress);
+
+    return (
+      <main className="app">
+        <header className="topBar">
+          <div>
+            <p className="eyebrow">Activity Detail</p>
+            <h1>{selectedRun.type}</h1>
+          </div>
+
+          <div className="buttonRow">
+            <button
+              className="secondaryButton"
+              onClick={() => setPageView("dashboard")}
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </header>
+
+        <section className="activityHero">
+          <div>
+            <p className="eyebrow">{selectedRun.date}</p>
+            <h2>{formatMiles(selectedRun.distanceMiles)} miles</h2>
+            <p className="bodyText">
+              This activity is labeled <strong>{selectedRun.effort}</strong>
+              {selectedRun.isRace ? " and came from a Strava race tag." : "."}
+            </p>
+          </div>
+
+          <div className="activityPillStack">
+            {selectedRun.isRace && <span className="pill racePill">Race</span>}
+            <span className="pill">{selectedRun.effort}</span>
+            <span className="pill">{stressLabel} load</span>
+          </div>
+        </section>
+
+        <section className="activityGrid">
+          <div className="card activityMetricCard">
+            <p className="cardLabel">Core Stats</p>
+            <div className="activityMetricList">
+              <div>
+                <span>Distance</span>
+                <strong>{formatMiles(selectedRun.distanceMiles)} mi</strong>
+              </div>
+              <div>
+                <span>Pace</span>
+                <strong>{selectedRun.pace}</strong>
+              </div>
+              <div>
+                <span>Elapsed Time</span>
+                <strong>{formatOptionalElapsedTime(selectedRun.elapsedTimeSeconds)}</strong>
+              </div>
+              <div>
+                <span>Source</span>
+                <strong>{selectedRun.source ?? "Manual"}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="card activityMetricCard">
+            <p className="cardLabel">Heart Rate</p>
+            <div className="activityMetricList">
+              <div>
+                <span>Average HR</span>
+                <strong>{formatOptionalHeartRate(selectedRun.averageHeartRate)}</strong>
+              </div>
+              <div>
+                <span>Max HR</span>
+                <strong>{formatOptionalHeartRate(selectedRun.maxHeartRate)}</strong>
+              </div>
+              <div>
+                <span>Relative Effort</span>
+                <strong>{getRunHeartRatePercent(selectedRun, observedMaxHeartRate)}</strong>
+              </div>
+              <div>
+                <span>Observed Max</span>
+                <strong>{observedMaxHeartRate ? `${observedMaxHeartRate} bpm` : "No HR data"}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="card activityMetricCard activityWideCard">
+            <p className="cardLabel">Training Load</p>
+            <div className="activityLoadSummary">
+              <strong>{runStress}</strong>
+              <div>
+                <h2>{stressLabel} activity load</h2>
+                <p>
+                  This score uses distance, the effort label, and heart rate
+                  when available. It is a simple estimate, not a lab-grade
+                  training stress score.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="card activityMetricCard activityWideCard">
+            <p className="cardLabel">Activity Flags</p>
+            <div className="activityTagGrid">
+              <div>
+                <span>Race tagged</span>
+                <strong>{selectedRun.isRace ? "Yes" : "No"}</strong>
+              </div>
+              <div>
+                <span>Race distance</span>
+                <strong>{selectedRun.raceDistance ?? "Not a race"}</strong>
+              </div>
+              <div>
+                <span>Strava workout type</span>
+                <strong>{selectedRun.stravaWorkoutType ?? "Not available"}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   if (pageView === "trainingPlan" && trainingPlan) {
     return (
@@ -773,9 +940,54 @@ async function handleGenerateAISummary() {
     <StatCard title="Longest Run" value={`${formatMiles(longestRun)} mi`} />
     <StatCard title="Runs in 7 Days" value={`${numberOfRuns}`} />
     <StatCard title="90-Day Avg" value={`${formatMiles(trendAverageWeeklyMiles)} mi/wk`} />
-    <StatCard title="Training Load" value={trainingLoad} />
+    <StatCard title="Training Status" value={trainingLoadMetrics.status} />
   </section>
 </div>
+
+      <section className="card loadPanel">
+        <div className="sectionHeader">
+          <div>
+            <p className="eyebrow">Training Load</p>
+            <h2>Fitness, fatigue, and form</h2>
+            <p>
+              This compares your last 7 days against your 6-week baseline using
+              mileage, effort, and heart rate when available.
+            </p>
+          </div>
+
+          <span className={`loadStatus loadStatus${trainingLoadMetrics.status}`}>
+            {trainingLoadMetrics.status}
+          </span>
+        </div>
+
+        <div className="loadMetricGrid">
+          <div>
+            <span>Fatigue</span>
+            <strong>{trainingLoadMetrics.acuteLoad}</strong>
+            <p>Last 7 days</p>
+          </div>
+
+          <div>
+            <span>Fitness</span>
+            <strong>{trainingLoadMetrics.chronicLoad}</strong>
+            <p>6-week baseline</p>
+          </div>
+
+          <div>
+            <span>Form</span>
+            <strong>{trainingLoadMetrics.form}</strong>
+            <p>Fitness minus fatigue</p>
+          </div>
+
+          <div>
+            <span>Ramp</span>
+            <strong>{trainingLoadMetrics.rampRate}%</strong>
+            <p>Recent load vs baseline</p>
+          </div>
+        </div>
+
+        <p className="loadExplanation">{trainingLoadMetrics.explanation}</p>
+      </section>
 
       <section className="contentGrid">
 
@@ -1007,7 +1219,11 @@ async function handleGenerateAISummary() {
 
 <div className="runList">
   {visibleRuns.map((run) => (
-    <RunCard key={run.date} run={run} />
+    <RunCard
+      key={`${run.date}-${run.type}-${run.distanceMiles}`}
+      run={run}
+      onSelect={handleSelectRun}
+    />
   ))}
 </div>
 

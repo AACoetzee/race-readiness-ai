@@ -156,21 +156,35 @@ function formatPace(minutesPerMile) {
   return `${minutes}:${String(seconds).padStart(2, "0")} /mi`;
 }
 
-function estimateEffort(activity) {
-  if (activity.average_heartrate && activity.max_heartrate) {
-    const heartRateRatio = activity.average_heartrate / activity.max_heartrate;
-
-    if (heartRateRatio >= 0.85) {
-      return "Hard";
-    }
-
-    if (heartRateRatio >= 0.75) {
-      return "Moderate";
-    }
-  }
+function estimateEffort(activity, observedMaxHeartRate) {
+  const activityName = String(activity.name || "").toLowerCase();
 
   if (activity.workout_type === 1 || activity.workout_type === 3) {
     return "Hard";
+  }
+
+  if (
+    /\b(race|time trial|tt|workout|interval|repeats|tempo|threshold|lt|track|fartlek|hill)\b/.test(
+      activityName
+    )
+  ) {
+    return "Hard";
+  }
+
+  if (activity.workout_type === 2 || /\b(long run|long)\b/.test(activityName)) {
+    return "Moderate";
+  }
+
+  if (/\b(easy|recovery|shakeout|warmup|cooldown)\b/.test(activityName)) {
+    return "Easy";
+  }
+
+  if (activity.average_heartrate && observedMaxHeartRate) {
+    const heartRateRatio = activity.average_heartrate / observedMaxHeartRate;
+
+    if (heartRateRatio >= 0.78) {
+      return "Moderate";
+    }
   }
 
   return "Easy";
@@ -193,7 +207,7 @@ function getRaceDistance(distanceMiles) {
   return Math.abs(distanceMiles - closest.miles) <= 1 ? closest.label : undefined;
 }
 
-function mapStravaActivityToRun(activity) {
+function mapStravaActivityToRun(activity, observedMaxHeartRate) {
   const distanceMiles = metersToMiles(activity.distance);
   const movingTimeMinutes = activity.moving_time / 60;
   const paceMinutesPerMile =
@@ -205,7 +219,7 @@ function mapStravaActivityToRun(activity) {
     type: activity.name || activity.type || "Strava Run",
     distanceMiles: Number(distanceMiles.toFixed(2)),
     pace: formatPace(paceMinutesPerMile),
-    effort: estimateEffort(activity),
+    effort: estimateEffort(activity, observedMaxHeartRate),
     elapsedTimeSeconds: isRace ? activity.elapsed_time : activity.moving_time,
     averageHeartRate: activity.average_heartrate,
     maxHeartRate: activity.max_heartrate,
@@ -662,6 +676,18 @@ function getTrainingPlanLongRunCap(goalRace) {
   return 6;
 }
 
+function getObservedMaxHeartRate(activities) {
+  const heartRates = activities.flatMap((activity) => [
+    activity.max_heartrate,
+    activity.average_heartrate,
+  ]);
+  const validHeartRates = heartRates.filter(
+    (heartRate) => typeof heartRate === "number" && Number.isFinite(heartRate)
+  );
+
+  return validHeartRates.length > 0 ? Math.max(...validHeartRates) : null;
+}
+
 function normalizeTrainingPlan(plan, goalRace, trendAverageWeeklyMiles) {
   const longRunCap = getTrainingPlanLongRunCap(goalRace);
 
@@ -795,10 +821,13 @@ app.get("/api/strava/runs", async (req, res) => {
   try {
     const accessToken = await getStravaAccessToken();
     const activities = await getStravaActivities(accessToken, safePerPage);
-    const runs = activities
+    const runActivities = activities
       .filter((activity) => activity.type === "Run" || activity.sport_type === "Run")
-      .filter((activity) => activity.distance > 0 && activity.moving_time > 0)
-      .map(mapStravaActivityToRun);
+      .filter((activity) => activity.distance > 0 && activity.moving_time > 0);
+    const observedMaxHeartRate = getObservedMaxHeartRate(runActivities);
+    const runs = runActivities.map((activity) =>
+      mapStravaActivityToRun(activity, observedMaxHeartRate)
+    );
 
     res.json({ runs });
   } catch (error) {

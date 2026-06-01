@@ -7,6 +7,7 @@ import {
   calculateRacePredictions,
   calculateTotalMiles,
   calculateTrainingLoad,
+  calculateTrainingLoadMetrics,
   convertRaceTimeToMinutes,
 } from "./fitnessCalculations";
 
@@ -92,5 +93,71 @@ describe("fitness calculations", () => {
     for (const time of Object.values(predictions)) {
       expect(time).not.toMatch(/:60(?:$|:)/);
     }
+  });
+
+  it("calculates acute load, chronic load, form, and status", () => {
+    const runs: Run[] = [
+      {
+        date: "2026-04-22",
+        type: "Easy Run",
+        distanceMiles: 10,
+        pace: "9:00 /mi",
+        effort: "Easy",
+      },
+      {
+        date: "2026-04-29",
+        type: "Easy Run",
+        distanceMiles: 10,
+        pace: "9:00 /mi",
+        effort: "Easy",
+      },
+      {
+        date: "2026-05-06",
+        type: "Easy Run",
+        distanceMiles: 10,
+        pace: "9:00 /mi",
+        effort: "Easy",
+      },
+      {
+        date: "2026-05-13",
+        type: "Easy Run",
+        distanceMiles: 10,
+        pace: "9:00 /mi",
+        effort: "Easy",
+      },
+      {
+        date: "2026-05-20",
+        type: "Easy Run",
+        distanceMiles: 10,
+        pace: "9:00 /mi",
+        effort: "Easy",
+      },
+      {
+        date: "2026-05-24",
+        type: "Workout",
+        distanceMiles: 8,
+        pace: "7:30 /mi",
+        effort: "Hard",
+        averageHeartRate: 170,
+        maxHeartRate: 185,
+      },
+      {
+        date: "2026-05-27",
+        type: "Long Run",
+        distanceMiles: 10,
+        pace: "8:40 /mi",
+        effort: "Moderate",
+      },
+    ];
+
+    expect(calculateTrainingLoadMetrics(runs)).toEqual({
+      acuteLoad: 25,
+      chronicLoad: 13,
+      form: -12,
+      rampRate: 100,
+      status: "Overreaching",
+      explanation:
+        "Your last 7 days are much heavier than your 6-week baseline, so fatigue risk is elevated.",
+    });
   });
 });

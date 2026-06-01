@@ -465,6 +465,93 @@ h3 {
   white-space: nowrap;
 }
 
+/* TRAINING LOAD PANEL */
+
+.loadPanel {
+  border-color: #a7d8c9;
+  margin-bottom: 24px;
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.72), rgba(255, 255, 255, 0.96)),
+    white;
+}
+
+.loadStatus {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: white;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.loadStatusBuilding,
+.loadStatusMaintaining {
+  border-color: #99d7ca;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.loadStatusFresh {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.loadStatusOverreaching {
+  border-color: #f1d08a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.loadMetricGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.loadMetricGrid div {
+  border: 1px solid #d7e5df;
+  border-radius: 16px;
+  padding: 18px;
+  background: white;
+}
+
+.loadMetricGrid span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.loadMetricGrid strong {
+  display: block;
+  color: #111827;
+  font-size: 34px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.loadMetricGrid p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.loadExplanation {
+  border-left: 4px solid #0f766e;
+  margin-top: 18px;
+  padding-left: 14px;
+  color: #475569;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
 /* GOAL RACE CARD */
 
 .goalCard {
@@ -718,15 +805,27 @@ h3 {
   border: 1px solid #e2e8f0;
   border-radius: 18px;
   padding: 18px;
+  width: 100%;
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 18px;
   align-items: center;
   background: white;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .runBox:hover {
   background: #f8fafc;
+  border-color: #99d7ca;
+  transform: translateY(-1px);
+}
+
+.runBox:focus-visible {
+  outline: 3px solid rgba(15, 118, 110, 0.28);
+  outline-offset: 3px;
 }
 
 .runBox p {
@@ -769,6 +868,113 @@ h3 {
   border-color: #dc2626;
   color: #991b1b;
   background: #fef2f2;
+}
+
+/* ACTIVITY DETAIL */
+
+.activityHero {
+  border: 1px solid #a7d8c9;
+  border-radius: 22px;
+  margin-bottom: 24px;
+  padding: 30px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.9), rgba(255, 255, 255, 0.98)),
+    white;
+}
+
+.activityHero h2 {
+  margin-bottom: 14px;
+  font-size: 44px;
+  line-height: 1;
+}
+
+.activityPillStack {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.activityGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.activityMetricCard {
+  padding: 24px;
+}
+
+.activityWideCard {
+  grid-column: 1 / -1;
+}
+
+.activityMetricList,
+.activityTagGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.activityMetricList div,
+.activityTagGrid div {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.activityMetricList span,
+.activityTagGrid span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.activityMetricList strong,
+.activityTagGrid strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 22px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityLoadSummary {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 20px;
+  align-items: center;
+}
+
+.activityLoadSummary > strong {
+  border: 1px solid #f1d08a;
+  border-radius: 18px;
+  padding: 22px;
+  background: #fffbeb;
+  color: #111827;
+  font-size: 42px;
+  line-height: 1;
+  text-align: center;
+}
+
+.activityLoadSummary h2 {
+  margin-bottom: 10px;
+}
+
+.activityLoadSummary p {
+  margin-bottom: 0;
+  color: #475569;
+  line-height: 1.5;
 }
 
 /* FITNESS SUMMARY */
@@ -839,6 +1045,7 @@ h3 {
 
   .planMetricGrid,
   .zoneGrid,
+  .loadMetricGrid,
   .planWeekList {
     grid-template-columns: 1fr;
   }
@@ -861,8 +1068,24 @@ h3 {
 @media (max-width: 800px) {
   .topBar,
   .heroCard,
+  .activityHero,
   .sectionHeader {
     grid-template-columns: 1fr;
+  }
+
+  .activityPillStack {
+    justify-content: flex-start;
+  }
+
+  .activityGrid,
+  .activityMetricList,
+  .activityTagGrid,
+  .activityLoadSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .activityWideCard {
+    grid-column: auto;
   }
 
   .statsGrid {

@@ -1,5 +1,14 @@
 import type { Run } from "../data/sampleRuns";
 
+export type TrainingLoadMetrics = {
+  acuteLoad: number;
+  chronicLoad: number;
+  form: number;
+  rampRate: number;
+  status: "Building" | "Maintaining" | "Fresh" | "Overreaching" | "Low";
+  explanation: string;
+};
+
 //Calculate total miles
 export function calculateTotalMiles(runs: Run[]) {
   return runs.reduce((sum, run) => {
@@ -116,6 +125,59 @@ function getTrainingWeeks(runs: Run[]) {
     Math.round((lastRunTime - firstRunTime) / millisecondsPerDay) + 1;
 
   return Math.max(1, spanDays / 7);
+}
+
+function getWindowRuns(runs: Run[], windowDays: number) {
+  if (runs.length === 0) {
+    return [];
+  }
+
+  const latestRunTime = Math.max(...runs.map(getRunTimeMs));
+  const windowStart = latestRunTime - (windowDays - 1) * 24 * 60 * 60 * 1000;
+
+  return runs.filter((run) => {
+    const runTime = getRunTimeMs(run);
+
+    return runTime >= windowStart && runTime <= latestRunTime;
+  });
+}
+
+function getEffortMultiplier(run: Run) {
+  if (run.effort === "Hard") {
+    return 1.35;
+  }
+
+  if (run.effort === "Moderate") {
+    return 1.15;
+  }
+
+  return 1;
+}
+
+function getHeartRateMultiplier(run: Run) {
+  if (!run.averageHeartRate || !run.maxHeartRate) {
+    return 1;
+  }
+
+  const heartRateRatio = run.averageHeartRate / run.maxHeartRate;
+
+  if (heartRateRatio >= 0.9) {
+    return 1.25;
+  }
+
+  if (heartRateRatio >= 0.82) {
+    return 1.15;
+  }
+
+  if (heartRateRatio >= 0.75) {
+    return 1.08;
+  }
+
+  return 1;
+}
+
+export function calculateRunTrainingStress(run: Run) {
+  return run.distanceMiles * getEffortMultiplier(run) * getHeartRateMultiplier(run);
 }
 
 export function convertRaceTimeToMinutes(raceTime: string) {
@@ -275,6 +337,53 @@ export function calculateTrainingLoad(runs: Run[]) {
   }
 
   return "Low";
+}
+
+export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
+  const acuteRuns = getWindowRuns(runs, 7);
+  const chronicRuns = getWindowRuns(runs, 42);
+  const acuteLoad = acuteRuns.reduce(
+    (sum, run) => sum + calculateRunTrainingStress(run),
+    0
+  );
+  const chronicLoad =
+    chronicRuns.reduce((sum, run) => sum + calculateRunTrainingStress(run), 0) / 6;
+  const roundedAcuteLoad = Math.round(acuteLoad);
+  const roundedChronicLoad = Math.round(chronicLoad);
+  const form = Math.round(chronicLoad - acuteLoad);
+  const rampRate =
+    chronicLoad > 0 ? Math.round(((acuteLoad - chronicLoad) / chronicLoad) * 100) : 0;
+  let status: TrainingLoadMetrics["status"] = "Low";
+  let explanation = "There is not enough recent training load to judge a trend yet.";
+
+  if (roundedChronicLoad >= 10) {
+    if (rampRate > 35) {
+      status = "Overreaching";
+      explanation =
+        "Your last 7 days are much heavier than your 6-week baseline, so fatigue risk is elevated.";
+    } else if (rampRate >= 10) {
+      status = "Building";
+      explanation =
+        "Your last 7 days are above your 6-week baseline, which usually means you are building fitness.";
+    } else if (rampRate <= -25) {
+      status = "Fresh";
+      explanation =
+        "Your last 7 days are lighter than your 6-week baseline, so you should be carrying less fatigue.";
+    } else {
+      status = "Maintaining";
+      explanation =
+        "Your last 7 days are close to your 6-week baseline, which usually means steady training.";
+    }
+  }
+
+  return {
+    acuteLoad: roundedAcuteLoad,
+    chronicLoad: roundedChronicLoad,
+    form,
+    rampRate,
+    status,
+    explanation,
+  };
 }
 
 //Select goal time

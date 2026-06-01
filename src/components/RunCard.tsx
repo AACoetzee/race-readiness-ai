@@ -2,11 +2,12 @@ import type { Run } from "../data/sampleRuns";
 
 type RunCardProps = {
   run: Run;
+  onSelect: (run: Run) => void;
 };
 
-function RunCard({ run }: RunCardProps) {
+function RunCard({ run, onSelect }: RunCardProps) {
   return (
-    <div className="runBox">
+    <button className="runBox" type="button" onClick={() => onSelect(run)}>
       <div>
         <h3>{run.type}</h3>
         <p>{run.date}</p>
@@ -23,7 +24,7 @@ function RunCard({ run }: RunCardProps) {
           <span className="pill">{run.effort}</span>
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
