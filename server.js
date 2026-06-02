@@ -60,6 +60,7 @@ const trainingPlanSchema = {
     "title",
     "overview",
     "confidence",
+    "whyThisPlan",
     "heartRateGuidance",
     "assumptions",
     "weeks",
@@ -68,6 +69,10 @@ const trainingPlanSchema = {
     title: { type: "string" },
     overview: { type: "string" },
     confidence: { type: "string", enum: ["Low", "Medium", "High"] },
+    whyThisPlan: {
+      type: "array",
+      items: { type: "string" },
+    },
     heartRateGuidance: {
       type: "array",
       items: { type: "string" },
@@ -104,6 +109,18 @@ const trainingPlanSchema = {
   },
 };
 
+const coachInsightSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["headline", "whatChanged", "nextMove", "watchOut"],
+  properties: {
+    headline: { type: "string" },
+    whatChanged: { type: "string" },
+    nextMove: { type: "string" },
+    watchOut: { type: "string" },
+  },
+};
+
 const fallbackSummary = {
   headline: "AI summary is unavailable right now.",
   summary: "The app could not generate an AI summary. Try again later.",
@@ -119,9 +136,17 @@ const fallbackTrainingPlan = {
   title: "Training plan unavailable",
   overview: "The app could not generate an AI training plan. Try again later.",
   confidence: "Low",
+  whyThisPlan: [],
   heartRateGuidance: [],
   assumptions: [],
   weeks: [],
+};
+
+const fallbackCoachInsight = {
+  headline: "Coach check-in is unavailable right now.",
+  whatChanged: "The app could not generate a training check-in.",
+  nextMove: "Use the dashboard load trend and recent run list as your guide for now.",
+  watchOut: "Try again later if the AI backend is unavailable.",
 };
 
 app.use(
@@ -148,6 +173,10 @@ function metersToMiles(meters) {
   return meters / 1609.344;
 }
 
+function metersToFeet(meters) {
+  return meters * 3.28084;
+}
+
 function formatPace(minutesPerMile) {
   const totalSeconds = Math.round(minutesPerMile * 60);
   const minutes = Math.floor(totalSeconds / 60);
@@ -159,6 +188,8 @@ function formatPace(minutesPerMile) {
 function estimateEffort(activity, observedMaxHeartRate) {
   const activityName = String(activity.name || "").toLowerCase();
 
+  // Prefer Strava tags and workout-like names over heart-rate guesses.
+  // Run-level max HR is noisy, so HR alone should not create a Hard label.
   if (activity.workout_type === 1 || activity.workout_type === 3) {
     return "Hard";
   }
@@ -191,6 +222,7 @@ function estimateEffort(activity, observedMaxHeartRate) {
 }
 
 function getRaceDistance(distanceMiles) {
+  // Race-tagged Strava activities are mapped to common race distances when close enough.
   const raceDistances = [
     { label: "5K", miles: 3.10686 },
     { label: "10K", miles: 6.21371 },
@@ -221,11 +253,17 @@ function mapStravaActivityToRun(activity, observedMaxHeartRate) {
     pace: formatPace(paceMinutesPerMile),
     effort: estimateEffort(activity, observedMaxHeartRate),
     elapsedTimeSeconds: isRace ? activity.elapsed_time : activity.moving_time,
+    movingTimeSeconds: activity.moving_time,
     averageHeartRate: activity.average_heartrate,
     maxHeartRate: activity.max_heartrate,
+    elevationGainFeet: activity.total_elevation_gain
+      ? Number(metersToFeet(activity.total_elevation_gain).toFixed(0))
+      : undefined,
+    averageCadence: activity.average_cadence,
     isRace,
     raceDistance: isRace ? getRaceDistance(distanceMiles) : undefined,
     source: "Strava",
+    stravaActivityId: activity.id,
     stravaWorkoutType: activity.workout_type,
   };
 }
@@ -543,10 +581,18 @@ function isValidRun(value) {
     ["Easy", "Moderate", "Hard"].includes(value.effort) &&
     (value.elapsedTimeSeconds === undefined ||
       (isFiniteNumber(value.elapsedTimeSeconds) && value.elapsedTimeSeconds > 0)) &&
+    (value.movingTimeSeconds === undefined ||
+      (isFiniteNumber(value.movingTimeSeconds) && value.movingTimeSeconds > 0)) &&
     (value.averageHeartRate === undefined ||
       (isFiniteNumber(value.averageHeartRate) && value.averageHeartRate > 0)) &&
     (value.maxHeartRate === undefined ||
       (isFiniteNumber(value.maxHeartRate) && value.maxHeartRate > 0)) &&
+    (value.elevationGainFeet === undefined ||
+      isFiniteNumber(value.elevationGainFeet)) &&
+    (value.averageCadence === undefined ||
+      isFiniteNumber(value.averageCadence)) &&
+    (value.stravaActivityId === undefined ||
+      isFiniteNumber(value.stravaActivityId)) &&
     (value.isRace === undefined || typeof value.isRace === "boolean") &&
     (value.raceDistance === undefined ||
       ["5K", "10K", "Half Marathon", "Marathon"].includes(value.raceDistance))
@@ -636,6 +682,8 @@ function validateTrainingPlan(plan, weeksUntilGoalRace) {
     isNonEmptyString(plan.title) &&
     isNonEmptyString(plan.overview) &&
     ["Low", "Medium", "High"].includes(plan.confidence) &&
+    Array.isArray(plan.whyThisPlan) &&
+    plan.whyThisPlan.every(isNonEmptyString) &&
     Array.isArray(plan.heartRateGuidance) &&
     plan.heartRateGuidance.every(isNonEmptyString) &&
     Array.isArray(plan.assumptions) &&
@@ -657,6 +705,19 @@ function validateTrainingPlan(plan, weeksUntilGoalRace) {
         isNonEmptyString(week.easyRunGuidance) &&
         isNonEmptyString(week.notes)
     )
+  );
+}
+
+function validateCoachInsight(insight) {
+  if (!insight || typeof insight !== "object" || Array.isArray(insight)) {
+    return false;
+  }
+
+  return (
+    isNonEmptyString(insight.headline) &&
+    isNonEmptyString(insight.whatChanged) &&
+    isNonEmptyString(insight.nextMove) &&
+    isNonEmptyString(insight.watchOut)
   );
 }
 
@@ -690,16 +751,27 @@ function getObservedMaxHeartRate(activities) {
 
 function normalizeTrainingPlan(plan, goalRace, trendAverageWeeklyMiles) {
   const longRunCap = getTrainingPlanLongRunCap(goalRace);
+  const startingMileage = Math.max(10, trendAverageWeeklyMiles);
+  let previousMileage = startingMileage;
 
   return {
     ...plan,
     weeks: plan.weeks.map((week) => {
-      const targetMiles = Math.max(0, Number(week.targetMiles.toFixed(1)));
+      // Hard safety rails run after AI generation so the plan cannot jump wildly.
+      const isCutbackWeek = week.week > 1 && week.week % 4 === 0;
+      const maxMileage = isCutbackWeek
+        ? previousMileage
+        : Math.max(startingMileage, previousMileage * 1.15);
+      const targetMiles = Math.max(
+        0,
+        Number(Math.min(week.targetMiles, maxMileage).toFixed(1))
+      );
       const weeklyLongRunCap = Math.min(longRunCap, Math.max(3, targetMiles * 0.45));
       const longRunMiles = Math.max(
         0,
         Number(Math.min(week.longRunMiles, weeklyLongRunCap).toFixed(1))
       );
+      previousMileage = targetMiles;
 
       return {
         ...week,
@@ -711,6 +783,7 @@ function normalizeTrainingPlan(plan, goalRace, trendAverageWeeklyMiles) {
       ...plan.assumptions,
       `${goalRace} long runs are capped near ${longRunCap} miles; race-tagged activities inform fitness but are not treated as normal weekly long runs.`,
       `Weekly mileage starts from about ${trendAverageWeeklyMiles.toFixed(1)} miles per week based on the recent training trend.`,
+      "Safety rules are applied after AI generation: weekly mileage jumps are capped, long runs are capped, and every fourth week is treated conservatively.",
     ].slice(0, 6),
   };
 }
@@ -726,6 +799,13 @@ function sendFallbackTrainingPlan(res, status, plan) {
   res.status(status).json({
     ...fallbackTrainingPlan,
     ...plan,
+  });
+}
+
+function sendFallbackCoachInsight(res, status, insight) {
+  res.status(status).json({
+    ...fallbackCoachInsight,
+    ...insight,
   });
 }
 
@@ -824,6 +904,7 @@ app.get("/api/strava/runs", async (req, res) => {
     const runActivities = activities
       .filter((activity) => activity.type === "Run" || activity.sport_type === "Run")
       .filter((activity) => activity.distance > 0 && activity.moving_time > 0);
+    // Observed max HR gives effort estimation a better baseline than each run's own max.
     const observedMaxHeartRate = getObservedMaxHeartRate(runActivities);
     const runs = runActivities.map((activity) =>
       mapStravaActivityToRun(activity, observedMaxHeartRate)
@@ -1000,9 +1081,12 @@ app.post("/api/training-plan", async (req, res) => {
     raceDataSource,
     mostRecentRace,
     observedMaxHeartRate,
+    planPreferences,
+    lockedWeeks,
     trendRuns,
   } = req.body;
   const planWeeks = Math.min(Math.max(weeksUntilGoalRace, 1), 24);
+  // Keep only the data the model needs; this avoids sending unnecessary Strava fields.
   const runnerData = {
     goalRace,
     goalRaceDate,
@@ -1016,6 +1100,8 @@ app.post("/api/training-plan", async (req, res) => {
     raceDataSource,
     mostRecentRace,
     observedMaxHeartRate,
+    planPreferences,
+    lockedWeeks: Array.isArray(lockedWeeks) ? lockedWeeks : [],
     trendRuns: trendRuns.map((run) => ({
       date: run.date,
       type: run.type,
@@ -1023,8 +1109,11 @@ app.post("/api/training-plan", async (req, res) => {
       pace: run.pace,
       effort: run.effort,
       elapsedTimeSeconds: run.elapsedTimeSeconds,
+      movingTimeSeconds: run.movingTimeSeconds,
       averageHeartRate: run.averageHeartRate,
       maxHeartRate: run.maxHeartRate,
+      elevationGainFeet: run.elevationGainFeet,
+      averageCadence: run.averageCadence,
       isRace: run.isRace,
       raceDistance: run.raceDistance,
     })),
@@ -1044,10 +1133,16 @@ ${JSON.stringify(runnerData, null, 2)}
 Rules:
 - Return exactly ${planWeeks} weeks.
 - Use the 90-day non-race training run list, average weekly mileage, longest non-race run, run frequency, recent race tag, and observed heart-rate data.
+- Use planPreferences to shape the plan around the runner's goal, available days per week, long-run day, rest day, style preference, injury status, and notes.
+- Treat Strava history as the baseline. Do not create a plan that ignores the runner's recent mileage and frequency.
+- Return whyThisPlan as 3-5 short reasons explaining which Strava trends and setup answers shaped the plan.
+- If lockedWeeks are supplied, preserve their intent and avoid contradicting them.
 - The supplied mostRecentRace is a fitness anchor, not a normal long-run training baseline.
 - Heart-rate data is mostly run-level average/max data, not full time-in-zone data. Do not pretend you know exact miles in each zone.
 - Use heart rate as guidance: easy runs should usually stay conversational and mostly Z1/Z2; workouts may touch Z3/Z4/Z5 depending on the race.
 - Keep the plan basic, realistic, and safe: one long run, mostly easy running, at most two quality sessions per week.
+- The weekly structure should respect daysPerWeek when possible. If the runner asks for fewer days, reduce frequency before increasing workout intensity.
+- Mention the requested longRunDay and restDay in notes when useful.
 - Build gradually from the current 90-day mileage. Avoid huge jumps from the runner's current baseline.
 - Include cutback/recovery weeks when useful.
 - Taper before race day.
@@ -1076,6 +1171,85 @@ Rules:
   } catch (error) {
     console.error(error);
     sendFallbackTrainingPlan(res, 500);
+  }
+});
+
+app.post("/api/coach-check-in", async (req, res) => {
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    sendFallbackCoachInsight(res, 400, {
+      whatChanged: "The request body was not valid.",
+    });
+    return;
+  }
+
+  if (!openai) {
+    sendFallbackCoachInsight(res, 503, {
+      whatChanged: "The backend is missing an OpenAI API key.",
+    });
+    return;
+  }
+
+  // The coach endpoint gets a compact snapshot, not the entire app state.
+  const coachData = {
+    currentDate: req.body.currentDate,
+    goalRace: req.body.goalRace,
+    goalRaceDate: req.body.goalRaceDate,
+    weeksUntilGoalRace: req.body.weeksUntilGoalRace,
+    selectedGoalTime: req.body.selectedGoalTime,
+    trainingLoadMetrics: req.body.trainingLoadMetrics,
+    trendAverageWeeklyMiles: req.body.trendAverageWeeklyMiles,
+    trendLongestRun: req.body.trendLongestRun,
+    trendNumberOfRuns: req.body.trendNumberOfRuns,
+    recentRuns: Array.isArray(req.body.recentRuns)
+      ? req.body.recentRuns.slice(0, 12)
+      : [],
+    fitnessTimeline: Array.isArray(req.body.fitnessTimeline)
+      ? req.body.fitnessTimeline.slice(-8)
+      : [],
+    heartRateZones: req.body.heartRateZones,
+    paceZones: req.body.paceZones,
+  };
+
+  try {
+    const response = await openai.responses.create({
+      model: AI_MODEL,
+      input: `
+You are a concise running coach.
+
+Create a weekly check-in for this runner using the data below.
+
+Data:
+${JSON.stringify(coachData, null, 2)}
+
+Rules:
+- Explain what changed this week using the load trend and recent runs.
+- Give one clear next move for the next 7 days.
+- Point out one thing to watch.
+- Use plain English.
+- Do not include medical advice.
+- Do not overpromise race results.
+- Keep each field short: 1-2 sentences.
+      `,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "race_readiness_coach_check_in",
+          schema: coachInsightSchema,
+          strict: true,
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.output_text);
+
+    if (!validateCoachInsight(parsed)) {
+      throw new Error("AI response did not match the expected coach check-in shape.");
+    }
+
+    res.json(parsed);
+  } catch (error) {
+    console.error(error);
+    sendFallbackCoachInsight(res, 500);
   }
 });
 

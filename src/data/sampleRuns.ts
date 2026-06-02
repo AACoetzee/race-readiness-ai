@@ -5,11 +5,15 @@ export type Run = {
   pace: string;
   effort: "Easy" | "Moderate" | "Hard";
   elapsedTimeSeconds?: number;
+  movingTimeSeconds?: number;
   averageHeartRate?: number;
   maxHeartRate?: number;
+  elevationGainFeet?: number;
+  averageCadence?: number;
   isRace?: boolean;
   raceDistance?: "5K" | "10K" | "Half Marathon" | "Marathon";
   source?: "Sample" | "Strava" | "Import";
+  stravaActivityId?: number;
   stravaWorkoutType?: number;
 };
 

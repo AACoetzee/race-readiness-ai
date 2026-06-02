@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./index.css";
 import { sampleRuns, type Run } from "./data/sampleRuns";
 import { generateAICoachSummary } from "./utils/aiCoachSummary";
@@ -13,6 +13,7 @@ import {
   calculateTrainingLoad,
   calculateTrainingLoadMetrics,
   calculateRunTrainingStress,
+  calculateTrainingLoadTimeline,
   convertRaceTimeToMinutes,
 } from "./utils/fitnessCalculations";
 
@@ -20,13 +21,24 @@ import StatCard from "./components/StatCard";
 import RunCard from "./components/RunCard";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
-const AI_SUMMARY_URL = `${API_BASE_URL}/api/ai-summary`;
 const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
+const COACH_CHECK_IN_URL = `${API_BASE_URL}/api/coach-check-in`;
 const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
 const TREND_WINDOW_DAYS = 90;
+const SAVED_TRAINING_PLAN_KEY = "race-readiness-training-plan";
+const SAVED_PLAN_PREFERENCES_KEY = "race-readiness-plan-preferences";
 type PageView = "dashboard" | "trainingPlan" | "activityDetail";
+type DashboardView = "overview" | "calendar" | "activities" | "zones" | "coach";
+
+function getStorage() {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
 
 type HeartRateZone = {
   name: string;
@@ -43,6 +55,7 @@ type PlanWeek = {
   workoutFocus: string;
   easyRunGuidance: string;
   notes: string;
+  locked?: boolean;
 };
 
 type TrainingPlan = {
@@ -50,10 +63,43 @@ type TrainingPlan = {
   overview: string;
   confidence: "Low" | "Medium" | "High";
   assumptions: string[];
+  whyThisPlan?: string[];
   heartRateMax: number | null;
   heartRateGuidance: string[];
   heartRateZones: HeartRateZone[];
   weeks: PlanWeek[];
+};
+
+type TrainingPlanPreferences = {
+  goalFocus: string;
+  daysPerWeek: number;
+  longRunDay: string;
+  restDay: string;
+  planStyle: string;
+  injuryStatus: string;
+  notes: string;
+};
+
+type PaceZone = {
+  name: string;
+  label: string;
+  range: string;
+  description: string;
+};
+
+type CoachInsight = {
+  headline: string;
+  whatChanged: string;
+  nextMove: string;
+  watchOut: string;
+};
+
+type PlannedWorkout = {
+  date: string;
+  title: string;
+  type: "Long run" | "Workout" | "Easy";
+  miles: number;
+  week: number;
 };
 
 function isRun(value: unknown): value is Run {
@@ -75,6 +121,10 @@ function isRun(value: unknown): value is Run {
       (typeof run.elapsedTimeSeconds === "number" &&
         Number.isFinite(run.elapsedTimeSeconds) &&
         run.elapsedTimeSeconds > 0)) &&
+    (run.movingTimeSeconds === undefined ||
+      (typeof run.movingTimeSeconds === "number" &&
+        Number.isFinite(run.movingTimeSeconds) &&
+        run.movingTimeSeconds > 0)) &&
     (run.isRace === undefined || typeof run.isRace === "boolean") &&
     (run.raceDistance === undefined ||
       ["5K", "10K", "Half Marathon", "Marathon"].includes(run.raceDistance)) &&
@@ -82,7 +132,16 @@ function isRun(value: unknown): value is Run {
       (typeof run.averageHeartRate === "number" &&
         Number.isFinite(run.averageHeartRate))) &&
     (run.maxHeartRate === undefined ||
-      (typeof run.maxHeartRate === "number" && Number.isFinite(run.maxHeartRate)))
+      (typeof run.maxHeartRate === "number" && Number.isFinite(run.maxHeartRate))) &&
+    (run.elevationGainFeet === undefined ||
+      (typeof run.elevationGainFeet === "number" &&
+        Number.isFinite(run.elevationGainFeet))) &&
+    (run.averageCadence === undefined ||
+      (typeof run.averageCadence === "number" &&
+        Number.isFinite(run.averageCadence))) &&
+    (run.stravaActivityId === undefined ||
+      (typeof run.stravaActivityId === "number" &&
+        Number.isFinite(run.stravaActivityId)))
   );
 }
 
@@ -172,6 +231,229 @@ function createHeartRateZones(maxHeartRate: number | null): HeartRateZone[] {
   ];
 }
 
+function getRaceDistanceMiles(raceDistance: string) {
+  if (raceDistance === "5K") {
+    return 3.1;
+  }
+
+  if (raceDistance === "10K") {
+    return 6.2;
+  }
+
+  if (raceDistance === "Half Marathon") {
+    return 13.1;
+  }
+
+  return 26.2;
+}
+
+function formatPaceFromMinutes(minutesPerMile: number) {
+  const totalSeconds = Math.max(0, Math.round(minutesPerMile * 60));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")} /mi`;
+}
+
+function getGoalPaceMinutes(goalRace: string, selectedGoalTime: string) {
+  const goalTimeMinutes = convertRaceTimeToMinutes(selectedGoalTime);
+
+  if (goalTimeMinutes <= 0) {
+    return null;
+  }
+
+  return goalTimeMinutes / getRaceDistanceMiles(goalRace);
+}
+
+function createPaceZones(goalRace: string, selectedGoalTime: string): PaceZone[] {
+  const goalPace = getGoalPaceMinutes(goalRace, selectedGoalTime);
+
+  if (!goalPace) {
+    return [
+      {
+        name: "Pace",
+        label: "Needs race estimate",
+        range: "Not available",
+        description: "Import race data or enter a valid past race time.",
+      },
+    ];
+  }
+
+  return [
+    {
+      name: "Easy",
+      label: "Aerobic",
+      range: `${formatPaceFromMinutes(goalPace + 1.5)}-${formatPaceFromMinutes(goalPace + 2.5)}`,
+      description: "Most normal mileage and recovery days",
+    },
+    {
+      name: "Steady",
+      label: "Controlled",
+      range: `${formatPaceFromMinutes(goalPace + 0.75)}-${formatPaceFromMinutes(goalPace + 1.5)}`,
+      description: "Comfortably moderate running",
+    },
+    {
+      name: "Tempo",
+      label: "Threshold",
+      range: `${formatPaceFromMinutes(goalPace + 0.2)}-${formatPaceFromMinutes(goalPace + 0.6)}`,
+      description: "Sustained workout efforts",
+    },
+    {
+      name: "Race",
+      label: goalRace,
+      range: `${formatPaceFromMinutes(goalPace - 0.1)}-${formatPaceFromMinutes(goalPace + 0.1)}`,
+      description: "Current estimated goal-race pace",
+    },
+    {
+      name: "Fast",
+      label: "Speed",
+      range: `${formatPaceFromMinutes(goalPace - 0.75)}-${formatPaceFromMinutes(goalPace - 0.25)}`,
+      description: "Short intervals and strides",
+    },
+  ];
+}
+
+function getWeekdayIndex(dayName: string) {
+  return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(dayName);
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+
+  return nextDate;
+}
+
+function getWeekdayDate(weekStart: Date, dayName: string) {
+  const requestedDay = getWeekdayIndex(dayName);
+  const safeDay = requestedDay >= 0 ? requestedDay : 0;
+  const offset = (safeDay - weekStart.getDay() + 7) % 7;
+
+  return addDays(weekStart, offset);
+}
+
+function getWorkoutDay(longRunDay: string, restDay: string) {
+  // Pick a workout day that avoids the runner's requested rest and long-run days.
+  const preferredDays = ["Tuesday", "Wednesday", "Thursday", "Friday", "Monday"];
+
+  return (
+    preferredDays.find((day) => day !== longRunDay && day !== restDay) ??
+    "Tuesday"
+  );
+}
+
+function getEasyRunDay(longRunDay: string, restDay: string, workoutDay: string) {
+  const preferredDays = ["Thursday", "Friday", "Wednesday", "Tuesday", "Saturday"];
+
+  return (
+    preferredDays.find(
+      (day) => day !== longRunDay && day !== restDay && day !== workoutDay
+    ) ?? "Thursday"
+  );
+}
+
+function getPlannedWorkouts(
+  plan: TrainingPlan | null,
+  currentDate: string,
+  preferences: TrainingPlanPreferences
+): PlannedWorkout[] {
+  if (!plan) {
+    return [];
+  }
+
+  // Convert weekly plan rows into dated workouts so the calendar can show the future.
+  const startDate = new Date(`${currentDate}T00:00:00`);
+  const weekStart = addDays(startDate, -startDate.getDay());
+  const workoutDay = getWorkoutDay(preferences.longRunDay, preferences.restDay);
+  const easyRunDay = getEasyRunDay(
+    preferences.longRunDay,
+    preferences.restDay,
+    workoutDay
+  );
+
+  return plan.weeks.flatMap((week) => {
+    const currentWeekStart = addDays(weekStart, (week.week - 1) * 7);
+    const longRunDate = getWeekdayDate(currentWeekStart, preferences.longRunDay);
+    const workoutDate = getWeekdayDate(currentWeekStart, workoutDay);
+    const easyMileage = Math.max(
+      0,
+      Number((week.targetMiles - week.longRunMiles).toFixed(1))
+    );
+    const workouts: PlannedWorkout[] = [
+      {
+        date: formatDateForInput(longRunDate),
+        title: `Week ${week.week} long run`,
+        type: "Long run",
+        miles: week.longRunMiles,
+        week: week.week,
+      },
+    ];
+
+    if (week.workoutFocus && week.phase !== "Race week") {
+      workouts.push({
+        date: formatDateForInput(workoutDate),
+        title: week.workoutFocus,
+        type: "Workout",
+        miles: Number(Math.min(week.targetMiles * 0.28, easyMileage).toFixed(1)),
+        week: week.week,
+      });
+    }
+
+    if (easyMileage > 0) {
+      workouts.push({
+        date: formatDateForInput(getWeekdayDate(currentWeekStart, easyRunDay)),
+        title: "Easy mileage",
+        type: "Easy",
+        miles: Number(Math.max(0, easyMileage - workouts.slice(1).reduce((sum, workout) => sum + workout.miles, 0)).toFixed(1)),
+        week: week.week,
+      });
+    }
+
+    return workouts.filter((workout) => workout.miles > 0);
+  });
+}
+
+function getCalendarDays(
+  runs: Run[],
+  plannedWorkouts: PlannedWorkout[],
+  referenceDate: Date
+) {
+  // The calendar combines completed Strava runs and future planned workouts.
+  const monthStart = new Date(referenceDate.getFullYear(), referenceDate.getMonth(), 1);
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - monthStart.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    const dateString = formatDateForInput(date);
+    const dayRuns = runs.filter((run) => run.date === dateString);
+    const dayPlannedWorkouts = plannedWorkouts.filter(
+      (workout) => workout.date === dateString
+    );
+
+    return {
+      date: dateString,
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === referenceDate.getMonth(),
+      runs: dayRuns,
+      plannedWorkouts: dayPlannedWorkouts,
+      miles: calculateTotalMiles(dayRuns),
+      plannedMiles: dayPlannedWorkouts.reduce((sum, workout) => sum + workout.miles, 0),
+    };
+  });
+}
+function getCalendarMonthLabel(referenceDate: Date) {
+  return referenceDate.toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function getShortDateLabel(date: string) {
+  return date.slice(5).replace("-", "/");
+}
+
 function isTrainingPlanResponse(value: unknown): value is Omit<
   TrainingPlan,
   "heartRateMax" | "heartRateZones"
@@ -186,6 +468,9 @@ function isTrainingPlanResponse(value: unknown): value is Omit<
     typeof plan.title === "string" &&
     typeof plan.overview === "string" &&
     ["Low", "Medium", "High"].includes(plan.confidence) &&
+    (plan.whyThisPlan === undefined ||
+      (Array.isArray(plan.whyThisPlan) &&
+        plan.whyThisPlan.every((item) => typeof item === "string"))) &&
     Array.isArray(plan.heartRateGuidance) &&
     plan.heartRateGuidance.every((item) => typeof item === "string") &&
     Array.isArray(plan.assumptions) &&
@@ -199,7 +484,43 @@ function isTrainingPlanResponse(value: unknown): value is Omit<
         typeof week.longRunMiles === "number" &&
         typeof week.workoutFocus === "string" &&
         typeof week.easyRunGuidance === "string" &&
-        typeof week.notes === "string"
+        typeof week.notes === "string" &&
+        (week.locked === undefined || typeof week.locked === "boolean")
+    )
+  );
+}
+
+function isCoachInsightResponse(value: unknown): value is CoachInsight {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const insight = value as CoachInsight;
+
+  return (
+    typeof insight.headline === "string" &&
+    typeof insight.whatChanged === "string" &&
+    typeof insight.nextMove === "string" &&
+    typeof insight.watchOut === "string"
+  );
+}
+
+function isStoredTrainingPlan(value: unknown): value is TrainingPlan {
+  if (!isTrainingPlanResponse(value)) {
+    return false;
+  }
+
+  const plan = value as TrainingPlan;
+
+  return (
+    (plan.heartRateMax === null || typeof plan.heartRateMax === "number") &&
+    Array.isArray(plan.heartRateZones) &&
+    plan.heartRateZones.every(
+      (zone) =>
+        typeof zone.name === "string" &&
+        typeof zone.label === "string" &&
+        typeof zone.range === "string" &&
+        typeof zone.description === "string"
     )
   );
 }
@@ -232,6 +553,14 @@ function formatMiles(miles: number) {
 
 function formatOptionalHeartRate(heartRate?: number) {
   return heartRate ? `${Math.round(heartRate)} bpm` : "No HR data";
+}
+
+function formatOptionalFeet(feet?: number) {
+  return typeof feet === "number" ? `${Math.round(feet)} ft` : "Not available";
+}
+
+function formatOptionalCadence(cadence?: number) {
+  return typeof cadence === "number" ? `${Math.round(cadence)} spm` : "Not available";
 }
 
 function getRunStressLabel(stress: number) {
@@ -282,11 +611,55 @@ const [showAllRuns, setShowAllRuns] = useState(false);
 const [actionMessage, setActionMessage] = useState("");
 const [isImportingStrava, setIsImportingStrava] = useState(false);
 const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
+const [isPlanIntakeOpen, setIsPlanIntakeOpen] = useState(false);
 const [pageView, setPageView] = useState<PageView>("dashboard");
-const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(null);
+const [dashboardView, setDashboardView] = useState<DashboardView>("overview");
+const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(() => {
+  // Load the last generated plan on startup when browser storage is available.
+  try {
+    const storage = getStorage();
+    const storedPlan = storage?.getItem(SAVED_TRAINING_PLAN_KEY);
+
+    if (!storedPlan) {
+      return null;
+    }
+
+    const parsedPlan = JSON.parse(storedPlan);
+
+    return isStoredTrainingPlan(parsedPlan) ? parsedPlan : null;
+  } catch {
+    return null;
+  }
+});
 const [selectedRun, setSelectedRun] = useState<Run | null>(null);
+const [planPreferences, setPlanPreferences] = useState<TrainingPlanPreferences>(() => {
+  const defaultPreferences = {
+    goalFocus: "Run a smart PR attempt",
+    daysPerWeek: 5,
+    longRunDay: "Sunday",
+    restDay: "Monday",
+    planStyle: "Balanced",
+    injuryStatus: "No current injury",
+    notes: "",
+  };
+
+  try {
+    const storage = getStorage();
+    const storedPreferences = storage?.getItem(SAVED_PLAN_PREFERENCES_KEY);
+
+    if (!storedPreferences) {
+      return defaultPreferences;
+    }
+
+    return {
+      ...defaultPreferences,
+      ...JSON.parse(storedPreferences),
+    };
+  } catch {
+    return defaultPreferences;
+  }
+});
 const importInputRef = useRef<HTMLInputElement | null>(null);
-const goalSectionRef = useRef<HTMLElement | null>(null);
 const summarySectionRef = useRef<HTMLElement | null>(null);
 
 const [pastRaceDate, setPastRaceDate] = useState("2026-05-01");
@@ -327,13 +700,22 @@ const totalMiles = calculateTotalMiles(trainingRuns);
 const longestRun = calculateLongestRun(trainingRuns);
 const numberOfRuns = calculateNumberOfRuns(trainingRuns);
 const fitnessScore = calculateFitnessScore(trainingRuns);
-const trendTotalMiles = calculateTotalMiles(trendRuns);
 const trendLongestRun = calculateLongestRun(trendRuns);
 const trendNumberOfRuns = calculateNumberOfRuns(trendRuns);
 const trendAverageWeeklyMiles = getAverageWeeklyMiles(trendRuns, TREND_WINDOW_DAYS);
 const planTrendRuns = trendRuns.filter((run) => !run.isRace);
 const planSourceRuns = planTrendRuns.length > 0 ? planTrendRuns : trendRuns;
 const planTrendLongestRun = calculateLongestRun(planSourceRuns);
+const fitnessTimeline = calculateTrainingLoadTimeline(trendRuns, 8);
+const plannedWorkouts = getPlannedWorkouts(trainingPlan, currentDate, planPreferences);
+const calendarReferenceDate = new Date(`${currentDate}T00:00:00`);
+const calendarDays = getCalendarDays(runs, plannedWorkouts, calendarReferenceDate);
+const calendarMonthLabel = getCalendarMonthLabel(calendarReferenceDate);
+const heartRateZones = createHeartRateZones(observedMaxHeartRate);
+const maxChartLoad = Math.max(
+  1,
+  ...fitnessTimeline.flatMap((point) => [point.acuteLoad, point.chronicLoad])
+);
 
 const racePredictions = isPastRaceTimeValid
   ? calculateRacePredictions(
@@ -357,6 +739,7 @@ const selectedGoalTime = racePredictions
     ? racePredictions.halfMarathon
     : racePredictions.marathon
   : "Enter a valid time";
+const paceZones = createPaceZones(goalRace, selectedGoalTime);
 
   const [aiSummary, setAiSummary] = useState<null | {
   headline: string;
@@ -369,19 +752,44 @@ const selectedGoalTime = racePredictions
   suggestions: string[];
 }>(null);
 
-const [isLoadingAI, setIsLoadingAI] = useState(false);
+const [isLoadingCoach, setIsLoadingCoach] = useState(false);
+const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
+
+useEffect(() => {
+  // Persist plan edits, locks, and generated weeks so refreshes do not wipe progress.
+  const storage = getStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  if (trainingPlan) {
+    storage.setItem(SAVED_TRAINING_PLAN_KEY, JSON.stringify(trainingPlan));
+    return;
+  }
+
+  storage.removeItem(SAVED_TRAINING_PLAN_KEY);
+}, [trainingPlan]);
+
+useEffect(() => {
+  const storage = getStorage();
+
+  if (storage) {
+    storage.setItem(
+      SAVED_PLAN_PREFERENCES_KEY,
+      JSON.stringify(planPreferences)
+    );
+  }
+}, [planPreferences]);
 
 function handleAnalyzeFitness() {
   setPageView("dashboard");
-  summarySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  setActionMessage("Jumped to your current fitness summary.");
-}
-
-function handleAddGoalRace() {
-  setPageView("dashboard");
-  goalSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  setActionMessage("Jumped to the goal race form.");
+  setDashboardView("coach");
+  setTimeout(() => {
+    summarySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 0);
+  setActionMessage("Jumped to your coaching summary.");
 }
 
 function handleSelectRun(run: Run) {
@@ -413,6 +821,7 @@ async function handleImportStravaRuns() {
 
     setRuns(data.runs);
     setSelectedRun(null);
+    setCoachInsight(null);
     setShowAllRuns(data.runs.length <= RECENT_RUN_LIMIT);
     const importedRace = getMostRecentRace(data.runs);
 
@@ -451,6 +860,7 @@ async function handleImportRuns(event: React.ChangeEvent<HTMLInputElement>) {
 
     setRuns(parsed);
     setSelectedRun(null);
+    setCoachInsight(null);
     setShowAllRuns(parsed.length <= RECENT_RUN_LIMIT);
     clearAiSummary();
     setActionMessage(`Imported ${parsed.length} runs from ${file.name}.`);
@@ -465,6 +875,7 @@ async function handleImportRuns(event: React.ChangeEvent<HTMLInputElement>) {
 function handleResetSampleData() {
   setRuns(sampleRuns);
   setSelectedRun(null);
+  setCoachInsight(null);
   setShowAllRuns(false);
   clearAiSummary();
   setActionMessage("Sample run data restored.");
@@ -517,6 +928,7 @@ function handleExportReport() {
 
 async function handleGenerateTrainingPlan() {
   const observedMaxHeartRate = getObservedMaxHeartRate(planSourceRuns);
+  const lockedWeeks = trainingPlan?.weeks.filter((week) => week.locked) ?? [];
 
   setIsGeneratingTrainingPlan(true);
   setActionMessage("Generating your AI training plan...");
@@ -540,6 +952,8 @@ async function handleGenerateTrainingPlan() {
         mostRecentRace,
         observedMaxHeartRate,
         trendRuns: planSourceRuns,
+        planPreferences,
+        lockedWeeks,
       }),
     });
     const data = await response.json();
@@ -548,11 +962,20 @@ async function handleGenerateTrainingPlan() {
       throw new Error(data.overview || "Could not generate a training plan.");
     }
 
+    // If the user locked weeks locally, keep those edits after the AI returns a new plan.
     setTrainingPlan({
       ...data,
       heartRateMax: observedMaxHeartRate,
       heartRateZones: createHeartRateZones(observedMaxHeartRate),
+      weeks: data.weeks.map((week) => {
+        const lockedWeek = lockedWeeks.find(
+          (candidate) => candidate.week === week.week
+        );
+
+        return lockedWeek ?? week;
+      }),
     });
+    setIsPlanIntakeOpen(false);
     setPageView("trainingPlan");
     setActionMessage("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -568,64 +991,363 @@ async function handleGenerateTrainingPlan() {
   }
 }
 
-async function handleGenerateAISummary() {
-  setIsLoadingAI(true);
+function handleOpenPlanIntake() {
+  setIsPlanIntakeOpen(true);
+  setActionMessage("");
+}
+
+function handleUpdatePlanWeek(
+  weekNumber: number,
+  updates: Partial<PlanWeek>
+) {
+  // Editing a week automatically locks it so regeneration does not casually overwrite it.
+  setTrainingPlan((currentPlan) => {
+    if (!currentPlan) {
+      return currentPlan;
+    }
+
+    return {
+      ...currentPlan,
+      weeks: currentPlan.weeks.map((week) =>
+        week.week === weekNumber ? { ...week, ...updates, locked: true } : week
+      ),
+    };
+  });
+}
+
+function handleTogglePlanWeekLock(weekNumber: number) {
+  setTrainingPlan((currentPlan) => {
+    if (!currentPlan) {
+      return currentPlan;
+    }
+
+    return {
+      ...currentPlan,
+      weeks: currentPlan.weeks.map((week) =>
+        week.week === weekNumber ? { ...week, locked: !week.locked } : week
+      ),
+    };
+  });
+}
+
+function handleClearTrainingPlan() {
+  setTrainingPlan(null);
+  setPageView("dashboard");
+  setActionMessage("Saved training plan cleared.");
+}
+
+async function handleGenerateCoachCheckIn() {
+  setIsLoadingCoach(true);
+  setActionMessage("Generating coach check-in...");
 
   try {
-    const response = await fetch(AI_SUMMARY_URL, {
+    const response = await fetch(COACH_CHECK_IN_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-
       body: JSON.stringify({
-         totalMiles,
-         longestRun,
-         numberOfRuns,
-         fitnessScore,
-        trainingLoad,
-        trendWindowDays: TREND_WINDOW_DAYS,
-        trendTotalMiles,
-        trendLongestRun,
-        trendNumberOfRuns,
-        trendAverageWeeklyMiles,
-        goalRace,
-        selectedGoalTime,
-        pastRaceDistance: effectivePastRaceDistance,
-        pastRaceTime: effectivePastRaceTime,
-        pastRaceDate: effectivePastRaceDate,
-        raceDataSource,
         currentDate,
-        daysSincePastRace,
-        weeksSincePastRace,
+        goalRace,
         goalRaceDate,
         weeksUntilGoalRace,
-        trainingWindowDays: TRAINING_WINDOW_DAYS,
-}),
-
+        selectedGoalTime,
+        trainingLoadMetrics,
+        trendAverageWeeklyMiles,
+        trendLongestRun,
+        trendNumberOfRuns,
+        recentRuns: runs.slice(0, 12),
+        fitnessTimeline,
+        heartRateZones,
+        paceZones,
+      }),
     });
-
     const data = await response.json();
 
-    setAiSummary(data);
+    if (!response.ok || !isCoachInsightResponse(data)) {
+      throw new Error(data.headline || "Could not generate coach check-in.");
+    }
+
+    setCoachInsight(data);
+    setActionMessage("");
   } catch (error) {
     console.error(error);
-
-    setAiSummary({
-  headline: "AI summary is unavailable right now.",
-  summary: "Something went wrong while calling the AI backend.",
-  aiAdjustedGoalTime: selectedGoalTime,
-  confidence: "Unknown",
-  dateAssessment: "No date assessment is available.",
-  strengths: [],
-  risks: [],
-  suggestions: [],
-});
-
+    setCoachInsight({
+      headline: "Coach check-in is unavailable right now.",
+      whatChanged: "The app could not call the AI coach endpoint.",
+      nextMove: "Use the training load and recent run data as your guide for now.",
+      watchOut:
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while generating the coach check-in.",
+    });
+    setActionMessage("");
   } finally {
-    setIsLoadingAI(false);
+    setIsLoadingCoach(false);
   }
 }
+
+const planIntakeModal = isPlanIntakeOpen ? (
+  <div className="modalBackdrop" role="presentation">
+    <section
+      className="planIntakeModal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="plan-intake-title"
+    >
+      <div className="sectionHeader">
+        <div>
+          <p className="eyebrow">Training Plan Setup</p>
+          <h2 id="plan-intake-title">Tell the coach what you want</h2>
+          <p>
+            The plan will use your Strava history as the base, then shape the
+            weeks around these answers.
+          </p>
+        </div>
+
+        <button
+          className="smallButton"
+          type="button"
+          onClick={() => setIsPlanIntakeOpen(false)}
+          disabled={isGeneratingTrainingPlan}
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="planRaceGrid">
+        <label>
+          Goal race
+          <select
+            value={goalRace}
+            onChange={(event) => {
+              setGoalRace(event.target.value);
+              clearAiSummary();
+            }}
+          >
+            <option value="5K">5K</option>
+            <option value="10K">10K</option>
+            <option value="Half Marathon">Half Marathon</option>
+            <option value="Marathon">Marathon</option>
+          </select>
+        </label>
+
+        <label>
+          Goal race date
+          <input
+            type="date"
+            value={goalRaceDate}
+            onChange={(event) => {
+              setGoalRaceDate(event.target.value);
+              clearAiSummary();
+            }}
+          />
+        </label>
+
+        {mostRecentRace ? (
+          <div className="planDetectedRace">
+            <span>Race-tagged Strava baseline</span>
+            <strong>{effectivePastRaceDistance} - {effectivePastRaceTime}</strong>
+            <p>{mostRecentRace.type} on {effectivePastRaceDate}</p>
+          </div>
+        ) : (
+          <>
+            <label>
+              Past race distance
+              <select
+                value={pastRaceDistance}
+                onChange={(event) => {
+                  setPastRaceDistance(event.target.value);
+                  clearAiSummary();
+                }}
+              >
+                <option value="5K">5K</option>
+                <option value="10K">10K</option>
+                <option value="Half Marathon">Half Marathon</option>
+                <option value="Marathon">Marathon</option>
+              </select>
+            </label>
+
+            <label>
+              Past race time
+              <input
+                value={pastRaceTime}
+                onChange={(event) => {
+                  setPastRaceTime(event.target.value);
+                  clearAiSummary();
+                }}
+                placeholder="22:30 or 1:43:20"
+              />
+            </label>
+
+            <label>
+              Past race date
+              <input
+                type="date"
+                value={pastRaceDate}
+                onChange={(event) => {
+                  setPastRaceDate(event.target.value);
+                  clearAiSummary();
+                }}
+              />
+            </label>
+          </>
+        )}
+      </div>
+
+      <div className="planIntakeGrid">
+        <label>
+          Main goal
+          <select
+            value={planPreferences.goalFocus}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                goalFocus: event.target.value,
+              }))
+            }
+          >
+            <option>Run a smart PR attempt</option>
+            <option>Finish strong and healthy</option>
+            <option>Build fitness without chasing a time</option>
+            <option>Return carefully after a break</option>
+          </select>
+        </label>
+
+        <label>
+          Runs per week
+          <select
+            value={planPreferences.daysPerWeek}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                daysPerWeek: Number(event.target.value),
+              }))
+            }
+          >
+            {[3, 4, 5, 6, 7].map((dayCount) => (
+              <option key={dayCount} value={dayCount}>
+                {dayCount}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Long run day
+          <select
+            value={planPreferences.longRunDay}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                longRunDay: event.target.value,
+              }))
+            }
+          >
+            {["Saturday", "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].map((day) => (
+              <option key={day}>{day}</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Preferred rest day
+          <select
+            value={planPreferences.restDay}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                restDay: event.target.value,
+              }))
+            }
+          >
+            {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
+              <option key={day}>{day}</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Plan style
+          <select
+            value={planPreferences.planStyle}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                planStyle: event.target.value,
+              }))
+            }
+          >
+            <option>Balanced</option>
+            <option>Conservative</option>
+            <option>Aggressive but sensible</option>
+            <option>Low intensity / high consistency</option>
+          </select>
+        </label>
+
+        <label>
+          Injury or limitation
+          <select
+            value={planPreferences.injuryStatus}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                injuryStatus: event.target.value,
+              }))
+            }
+          >
+            <option>No current injury</option>
+            <option>Minor niggle, be cautious</option>
+            <option>Returning from injury</option>
+            <option>Very fatigue-sensitive right now</option>
+          </select>
+        </label>
+
+        <label className="planNotesField">
+          Anything else?
+          <textarea
+            value={planPreferences.notes}
+            onChange={(event) =>
+              setPlanPreferences((current) => ({
+                ...current,
+                notes: event.target.value,
+              }))
+            }
+            placeholder="Example: I prefer workouts on Tuesdays, no doubles, travel in week 3..."
+          />
+        </label>
+      </div>
+
+      <div className="planIntakeSummary">
+        <p>
+          Strava base: {formatMiles(trendAverageWeeklyMiles)} mi/wk over 90
+          days, longest non-race run {formatMiles(planTrendLongestRun)} mi,{" "}
+          {trendNumberOfRuns} recent activities.
+        </p>
+      </div>
+
+      <div className="modalActions">
+        <button
+          className="secondaryButton"
+          type="button"
+          onClick={() => setIsPlanIntakeOpen(false)}
+          disabled={isGeneratingTrainingPlan}
+        >
+          Cancel
+        </button>
+
+        <button
+          className="planButton"
+          type="button"
+          onClick={handleGenerateTrainingPlan}
+          disabled={isGeneratingTrainingPlan}
+        >
+          {isGeneratingTrainingPlan ? "Building..." : "Build My Plan"}
+        </button>
+      </div>
+    </section>
+  </div>
+) : null;
 
   const aiCoachSummary = generateAICoachSummary({
   totalMiles,
@@ -655,6 +1377,12 @@ async function handleGenerateAISummary() {
               onClick={() => setPageView("dashboard")}
             >
               Back to Dashboard
+            </button>
+            <button
+              className="secondaryButton"
+              onClick={handleClearTrainingPlan}
+            >
+              Clear Saved Plan
             </button>
           </div>
         </header>
@@ -693,6 +1421,10 @@ async function handleGenerateAISummary() {
                 <strong>{formatOptionalElapsedTime(selectedRun.elapsedTimeSeconds)}</strong>
               </div>
               <div>
+                <span>Moving Time</span>
+                <strong>{formatOptionalElapsedTime(selectedRun.movingTimeSeconds)}</strong>
+              </div>
+              <div>
                 <span>Source</span>
                 <strong>{selectedRun.source ?? "Manual"}</strong>
               </div>
@@ -717,6 +1449,28 @@ async function handleGenerateAISummary() {
               <div>
                 <span>Observed Max</span>
                 <strong>{observedMaxHeartRate ? `${observedMaxHeartRate} bpm` : "No HR data"}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="card activityMetricCard">
+            <p className="cardLabel">Strava Details</p>
+            <div className="activityMetricList">
+              <div>
+                <span>Elevation Gain</span>
+                <strong>{formatOptionalFeet(selectedRun.elevationGainFeet)}</strong>
+              </div>
+              <div>
+                <span>Avg Cadence</span>
+                <strong>{formatOptionalCadence(selectedRun.averageCadence)}</strong>
+              </div>
+              <div>
+                <span>Activity ID</span>
+                <strong>{selectedRun.stravaActivityId ?? "Not available"}</strong>
+              </div>
+              <div>
+                <span>Workout Type</span>
+                <strong>{selectedRun.stravaWorkoutType ?? "Not available"}</strong>
               </div>
             </div>
           </div>
@@ -777,6 +1531,66 @@ async function handleGenerateAISummary() {
           </div>
         </header>
 
+        {planIntakeModal}
+
+        <section className="card planGoalCard">
+          <div className="sectionHeader">
+            <div>
+              <p className="eyebrow">Goal Race</p>
+              <h2>{goalRace}</h2>
+              <p>
+                The training plan is built from this race goal, your race-tagged
+                Strava result, your goal date, and your plan setup answers.
+              </p>
+            </div>
+
+            <div className="buttonRow">
+              <button
+                className="planButton"
+                onClick={handleOpenPlanIntake}
+                disabled={isGeneratingTrainingPlan}
+              >
+                {isGeneratingTrainingPlan ? "Generating..." : "Update Goal & Plan"}
+              </button>
+            </div>
+          </div>
+
+          <div className="planGoalGrid">
+            <div>
+              <span>Goal Date</span>
+              <strong>{goalRaceDate}</strong>
+            </div>
+            <div>
+              <span>Time Estimate</span>
+              <strong>{selectedGoalTime}</strong>
+            </div>
+            <div>
+              <span>Weeks Away</span>
+              <strong>{weeksUntilGoalRace}</strong>
+            </div>
+            <div>
+              <span>Race Data</span>
+              <strong>{raceDataSource}</strong>
+            </div>
+            <div>
+              <span>Main Goal</span>
+              <strong>{planPreferences.goalFocus}</strong>
+            </div>
+            <div>
+              <span>Runs / Week</span>
+              <strong>{planPreferences.daysPerWeek}</strong>
+            </div>
+            <div>
+              <span>Long Run</span>
+              <strong>{planPreferences.longRunDay}</strong>
+            </div>
+            <div>
+              <span>Rest Day</span>
+              <strong>{planPreferences.restDay}</strong>
+            </div>
+          </div>
+        </section>
+
         <section className="planHero">
           <div>
             <p className="eyebrow">Plan Basis</p>
@@ -834,30 +1648,102 @@ async function handleGenerateAISummary() {
           <div className="planWeekList">
             {trainingPlan.weeks.map((week) => (
               <article className="planWeek" key={week.week}>
-                <div>
-                  <p className="cardLabel">Week {week.week}</p>
-                  <h3>{week.phase}</h3>
+                <div className="planWeekHeader">
+                  <div>
+                    <p className="cardLabel">Week {week.week}</p>
+                    <h3>{week.phase}</h3>
+                  </div>
+                  <button
+                    className={week.locked ? "lockButton locked" : "lockButton"}
+                    type="button"
+                    onClick={() => handleTogglePlanWeekLock(week.week)}
+                  >
+                    {week.locked ? "Locked" : "Lock"}
+                  </button>
                 </div>
 
                 <div className="planWeekStats">
                   <div>
                     <span>Mileage</span>
-                    <strong>{week.targetMiles} mi</strong>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={week.targetMiles}
+                      onChange={(event) =>
+                        handleUpdatePlanWeek(week.week, {
+                          targetMiles: Number(event.target.value),
+                        })
+                      }
+                    />
                   </div>
 
                   <div>
                     <span>Long run</span>
-                    <strong>{week.longRunMiles} mi</strong>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={week.longRunMiles}
+                      onChange={(event) =>
+                        handleUpdatePlanWeek(week.week, {
+                          longRunMiles: Number(event.target.value),
+                        })
+                      }
+                    />
                   </div>
                 </div>
 
-                <p>{week.workoutFocus}</p>
-                <p>{week.easyRunGuidance}</p>
-                <p className="mutedText">{week.notes}</p>
+                <label className="planWeekField">
+                  Workout
+                  <textarea
+                    value={week.workoutFocus}
+                    onChange={(event) =>
+                      handleUpdatePlanWeek(week.week, {
+                        workoutFocus: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="planWeekField">
+                  Easy guidance
+                  <textarea
+                    value={week.easyRunGuidance}
+                    onChange={(event) =>
+                      handleUpdatePlanWeek(week.week, {
+                        easyRunGuidance: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="planWeekField">
+                  Notes
+                  <textarea
+                    value={week.notes}
+                    onChange={(event) =>
+                      handleUpdatePlanWeek(week.week, {
+                        notes: event.target.value,
+                      })
+                    }
+                  />
+                </label>
               </article>
             ))}
           </div>
         </section>
+
+        {trainingPlan.whyThisPlan && trainingPlan.whyThisPlan.length > 0 && (
+          <section className="card">
+            <h2>Why This Plan</h2>
+            <ul className="planAssumptions">
+              {trainingPlan.whyThisPlan.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className="card">
           <h2>Assumptions</h2>
@@ -898,7 +1784,7 @@ async function handleGenerateAISummary() {
           </button>
           <button
             className="planButton"
-            onClick={handleGenerateTrainingPlan}
+            onClick={handleOpenPlanIntake}
             disabled={isGeneratingTrainingPlan}
           >
             {isGeneratingTrainingPlan ? "Generating..." : "Generate Training Plan"}
@@ -916,6 +1802,29 @@ async function handleGenerateAISummary() {
 
       {actionMessage && <p className="actionStatus">{actionMessage}</p>}
 
+      {planIntakeModal}
+
+      <nav className="dashboardTabs" aria-label="Dashboard sections">
+        {[
+          ["overview", "Overview"],
+          ["calendar", "Calendar"],
+          ["activities", "Activities"],
+          ["zones", "Zones"],
+          ["coach", "AI Coach"],
+        ].map(([view, label]) => (
+          <button
+            className={dashboardView === view ? "activeDashboardTab" : ""}
+            key={view}
+            type="button"
+            onClick={() => setDashboardView(view as DashboardView)}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {dashboardView === "overview" && (
+        <>
    <div className="dashboardGrid">
 
   <section className="heroCard">
@@ -988,214 +1897,183 @@ async function handleGenerateAISummary() {
 
         <p className="loadExplanation">{trainingLoadMetrics.explanation}</p>
       </section>
-
-      <section className="contentGrid">
-
-
-   <section className="card goalCard" ref={goalSectionRef}>
-  <div className="goalHeader">
-    <div>
-      <p className="eyebrow">Goal Race</p>
-      <h2>{goalRace}</h2>
-    </div>
-
-    <span>{weeksUntilGoalRace} weeks away</span>
-  </div>
-
-  <div className="goalButtons">
-    <button
-      className={goalRace === "5K" ? "activeGoalButton" : ""}
-      onClick={() => {
-  setGoalRace("5K");
-  clearAiSummary();
-}}
-    >
-      5K
-    </button>
-
-    <button
-      className={goalRace === "10K" ? "activeGoalButton" : ""}
-      onClick={() => {
-  setGoalRace("10K");
-  clearAiSummary();
-}}
-    >
-      10K
-    </button>
-
-    <button
-      className={goalRace === "Half Marathon" ? "activeGoalButton" : ""}
-      onClick={() => {
-  setGoalRace("Half Marathon");
-  clearAiSummary();
-}}
-    >
-      Half Marathon
-    </button>
-
-    <button
-      className={goalRace === "Marathon" ? "activeGoalButton" : ""}
-      onClick={() => {
-  setGoalRace("Marathon");
-  clearAiSummary();
-}}
-    >
-      Marathon
-    </button>
-  </div>
-
-  <div className="goalDashboardGrid">
-    <div className="goalInfoCard">
-      <p className="cardLabel">Formula estimate</p>
-
-      {mostRecentRace && (
-        <p className="raceSourceText">
-          Using latest race-tagged Strava activity:{" "}
-          <strong>{mostRecentRace.type}</strong> on {mostRecentRace.date}.
-        </p>
+        </>
       )}
 
-      <p className="goalFormulaText">
-        {isPastRaceTimeValid ? (
-          <>
-            Based on your past {effectivePastRaceDistance} time of{" "}
-            <strong>{effectivePastRaceTime}</strong>, your estimated {goalRace} time is:
-          </>
-        ) : (
-          <>Import a Strava race-tagged activity or enter a manual race time.</>
+      {(dashboardView === "overview" || dashboardView === "coach") && (
+      <section className="analyticsGrid">
+        {dashboardView === "overview" && (
+        <section className="card fitnessChartCard">
+          <div className="sectionHeader">
+            <div>
+              <p className="eyebrow">Fitness Chart</p>
+              <h2>8-week load trend</h2>
+              <p>Fitness is your 6-week baseline. Fatigue is your last 7 days.</p>
+            </div>
+          </div>
+
+          <div className="fitnessChart">
+            {fitnessTimeline.map((point) => (
+              <div className="chartColumn" key={point.date}>
+                <div className="chartBars">
+                  <span
+                    className="chartBar chartBarFitness"
+                    style={{ height: `${Math.max(6, (point.chronicLoad / maxChartLoad) * 100)}%` }}
+                    title={`Fitness ${point.chronicLoad}`}
+                  />
+                  <span
+                    className="chartBar chartBarFatigue"
+                    style={{ height: `${Math.max(6, (point.acuteLoad / maxChartLoad) * 100)}%` }}
+                    title={`Fatigue ${point.acuteLoad}`}
+                  />
+                </div>
+                <strong>{point.form}</strong>
+                <span>{getShortDateLabel(point.date)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="chartLegend">
+            <span><i className="legendFitness" /> Fitness</span>
+            <span><i className="legendFatigue" /> Fatigue</span>
+            <span>Number under each week = form</span>
+          </div>
+        </section>
         )}
-      </p>
 
-      <strong className="formulaTime">{selectedGoalTime}</strong>
+        {dashboardView === "coach" && (
+        <section className="card coachCard">
+          <div className="sectionHeader">
+            <div>
+              <p className="eyebrow">AI Coach</p>
+              <h2>Weekly check-in</h2>
+              <p>Uses your load trend, recent runs, race goal, HR zones, and pace zones.</p>
+            </div>
 
-      <button
-        className="aiButton"
-        onClick={handleGenerateAISummary}
-        disabled={isLoadingAI || !isPastRaceTimeValid}
-      >
-        {isLoadingAI ? "Generating..." : "Generate AI Summary"}
-      </button>
-    </div>
-
-    <div className="goalInputCard">
-      <p className="cardLabel">
-        {mostRecentRace ? "Detected race data" : "Past race details"}
-      </p>
-
-      {mostRecentRace ? (
-        <div className="detectedRaceBox">
-          <div>
-            <p>Race source</p>
-            <strong>Strava race tag</strong>
+            <button
+              className="aiButton coachButton"
+              onClick={handleGenerateCoachCheckIn}
+              disabled={isLoadingCoach}
+            >
+              {isLoadingCoach ? "Generating..." : "Generate Check-In"}
+            </button>
           </div>
 
-          <div>
-            <p>Activity</p>
-            <strong>{mostRecentRace.type}</strong>
-          </div>
-
-          <div>
-            <p>Race distance</p>
-            <strong>{effectivePastRaceDistance}</strong>
-          </div>
-
-          <div>
-            <p>Race time</p>
-            <strong>{effectivePastRaceTime}</strong>
-          </div>
-
-          <div>
-            <p>Race date</p>
-            <strong>{effectivePastRaceDate}</strong>
-          </div>
-
-          <label>
-            Goal race date
-            <input
-              type="date"
-              value={goalRaceDate}
-              onChange={(event) => {
-  setGoalRaceDate(event.target.value);
-  clearAiSummary();
-}}
-            />
-          </label>
-        </div>
-      ) : (
-        <div className="pastRaceForm">
-        <label>
-          Past race distance
-          <select
-            value={pastRaceDistance}
-            onChange={(event) => {
-  setPastRaceDistance(event.target.value);
-  clearAiSummary();
-}}
-          >
-            <option value="5K">5K</option>
-            <option value="10K">10K</option>
-            <option value="Half Marathon">Half Marathon</option>
-            <option value="Marathon">Marathon</option>
-          </select>
-        </label>
-
-        <label>
-          Past race time
-          <input
-            value={pastRaceTime}
-            onChange={(event) => {
-  setPastRaceTime(event.target.value);
-  clearAiSummary();
-}}
-            placeholder="22:30 or 1:43:20"
-          />
-
-          {!isPastRaceTimeValid && (
-            <span className="inputError">
-              Please enter a valid time like 22:30 or 1:43:20.
-            </span>
+          {coachInsight ? (
+            <div className="coachInsightGrid">
+              <div>
+                <span>Headline</span>
+                <strong>{coachInsight.headline}</strong>
+              </div>
+              <div>
+                <span>What changed</span>
+                <p>{coachInsight.whatChanged}</p>
+              </div>
+              <div>
+                <span>Next move</span>
+                <p>{coachInsight.nextMove}</p>
+              </div>
+              <div>
+                <span>Watch out</span>
+                <p>{coachInsight.watchOut}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="coachEmpty">
+              Generate a check-in when you want the app to explain the week in plain English.
+            </p>
           )}
-        </label>
-
-        <label>
-          Past race date
-          <input
-            type="date"
-            value={pastRaceDate}
-            onChange={(event) => {
-  setPastRaceDate(event.target.value);
-  clearAiSummary();
-}}
-          />
-        </label>
-
-        <label>
-          Goal race date
-          <input
-            type="date"
-            value={goalRaceDate}
-            onChange={(event) => {
-  setGoalRaceDate(event.target.value);
-  clearAiSummary();
-}}
-          />
-        </label>
-      </div>
+        </section>
+        )}
+      </section>
       )}
-    </div>
 
-    {aiSummary && (
-      <div className="goalAiCard">
-        <p className="cardLabel">AI adjusted estimate</p>
-        <strong>{aiSummary.aiAdjustedGoalTime}</strong>
-        <span>Confidence: {aiSummary.confidence}</span>
-        <p>{aiSummary.dateAssessment}</p>
-      </div>
-    )}
-  </div>
-</section>
+      {dashboardView === "calendar" && (
+      <section className="card calendarCard">
+        <div className="sectionHeader">
+          <div>
+            <p className="eyebrow">Training Calendar</p>
+            <h2>{calendarMonthLabel}</h2>
+            <p>Click a day with a run to open its activity details.</p>
+          </div>
+        </div>
 
+        <div className="calendarWeekdays">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+            <span key={day}>{day}</span>
+          ))}
+        </div>
 
+        <div className="calendarGrid">
+          {calendarDays.map((day) => (
+            <button
+              className={`calendarDay${day.isCurrentMonth ? "" : " calendarDayMuted"}${day.runs.length > 0 ? " calendarDayHasRun" : ""}${day.plannedWorkouts.length > 0 ? " calendarDayHasPlan" : ""}`}
+              key={day.date}
+              type="button"
+              onClick={() => {
+                if (day.runs[0]) {
+                  handleSelectRun(day.runs[0]);
+                }
+              }}
+              disabled={day.runs.length === 0 && day.plannedWorkouts.length === 0}
+            >
+              <span>{day.day}</span>
+              <div className="calendarDayDetails">
+                {day.runs.length > 0 && (
+                  <strong>{formatMiles(day.miles)} mi done</strong>
+                )}
+                {day.plannedWorkouts.length > 0 && (
+                  <em>{formatMiles(day.plannedMiles)} mi planned</em>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+      )}
+
+      {dashboardView === "zones" && (
+      <section className="card zonesCard">
+        <div className="sectionHeader">
+          <div>
+            <p className="eyebrow">Zones</p>
+            <h2>HR and pace guidance</h2>
+            <p>These are practical buckets for planning. Exact zones can be refined later.</p>
+          </div>
+        </div>
+
+        <div className="zonesLayout">
+          <div>
+            <h3>Heart rate zones</h3>
+            <div className="compactZoneGrid">
+              {heartRateZones.map((zone) => (
+                <div key={zone.name}>
+                  <span>{zone.name}</span>
+                  <strong>{zone.range}</strong>
+                  <p>{zone.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h3>Pace zones</h3>
+            <div className="compactZoneGrid">
+              {paceZones.map((zone) => (
+                <div key={zone.name}>
+                  <span>{zone.name}</span>
+                  <strong>{zone.range}</strong>
+                  <p>{zone.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+      )}
+
+      {dashboardView === "activities" && (
+      <section className="contentGrid">
         <div className="card largeCard">
           <div className="sectionHeader">
             <div>
@@ -1230,7 +2108,9 @@ async function handleGenerateAISummary() {
         </div>
 
       </section>
+      )}
 
+      {dashboardView === "coach" && (
       <section className="card" ref={summarySectionRef}>
         <h2>Fitness Summary</h2>
         
@@ -1294,14 +2174,12 @@ async function handleGenerateAISummary() {
           <button className="secondaryButton" onClick={handleResetSampleData}>
             Reset Sample Data
           </button>
-          <button className="secondaryButton" onClick={handleAddGoalRace}>
-            Add Goal Race
-          </button>
           <button className="secondaryButton" onClick={handleExportReport}>
             Export Report
           </button>
         </div>
       </section>
+      )}
     </main>
   );
 }

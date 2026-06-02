@@ -11,7 +11,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font-family: inherit;
 }
 
@@ -196,7 +197,211 @@ h3 {
   font-weight: 700;
 }
 
+.dashboardTabs {
+  border: 1px solid #d7e5df;
+  border-radius: 18px;
+  margin-bottom: 24px;
+  padding: 8px;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  background: white;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.06);
+}
+
+.dashboardTabs button {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: transparent;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.dashboardTabs button:hover,
+.dashboardTabs button.activeDashboardTab {
+  border-color: #99d7ca;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+/* PLAN INTAKE MODAL */
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.planIntakeModal {
+  width: min(920px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  border: 1px solid #d7e5df;
+  border-radius: 24px;
+  padding: 26px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.24);
+}
+
+.planIntakeGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.planRaceGrid {
+  border: 1px solid #d7e5df;
+  border-radius: 18px;
+  margin-bottom: 18px;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  background: #f8fafc;
+}
+
+.planIntakeGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.planRaceGrid label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.planIntakeGrid select,
+.planIntakeGrid textarea,
+.planRaceGrid select,
+.planRaceGrid input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: white;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.planDetectedRace {
+  grid-column: 1 / -1;
+  border: 1px solid #a7d8c9;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ecfdf5;
+}
+
+.planDetectedRace span {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.planDetectedRace strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #111827;
+  font-size: 18px;
+}
+
+.planDetectedRace p {
+  margin-bottom: 0;
+  color: #475569;
+}
+
+.planIntakeGrid textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.planNotesField {
+  grid-column: 1 / -1;
+}
+
+.planIntakeSummary {
+  border: 1px solid #a7d8c9;
+  border-radius: 16px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  background: #ecfdf5;
+}
+
+.planIntakeSummary p {
+  margin-bottom: 0;
+  color: #0f766e;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 /* TRAINING PLAN */
+
+.planGoalCard {
+  border-color: #a7d8c9;
+  margin-bottom: 24px;
+}
+
+.planGoalCard .buttonRow {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.planGoalGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.planGoalGrid div {
+  border: 1px solid #d7e5df;
+  border-radius: 16px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.planGoalGrid span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.planGoalGrid strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .planHero {
   border: 1px solid #a7d8c9;
@@ -290,6 +495,30 @@ h3 {
   font-size: 22px;
 }
 
+.planWeekHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.lockButton {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: white;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.lockButton.locked {
+  border-color: #f1d08a;
+  background: #fffbeb;
+  color: #92400e;
+}
+
 .planWeek p {
   color: #475569;
   line-height: 1.45;
@@ -320,6 +549,40 @@ h3 {
 .planWeekStats strong {
   font-size: 20px;
   white-space: nowrap;
+}
+
+.planWeekStats input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.planWeekField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.planWeekField textarea {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+  text-transform: none;
 }
 
 .planAssumptions {
@@ -977,6 +1240,283 @@ h3 {
   line-height: 1.5;
 }
 
+/* INTERVALS-STYLE ANALYTICS */
+
+.analyticsGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.fitnessChartCard,
+.coachCard,
+.calendarCard,
+.zonesCard {
+  margin-bottom: 24px;
+}
+
+.fitnessChart {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 260px;
+  align-items: end;
+}
+
+.chartColumn {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 8px;
+  min-width: 0;
+  text-align: center;
+}
+
+.chartBars {
+  height: 190px;
+  display: flex;
+  justify-content: center;
+  align-items: end;
+  gap: 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 8px 6px;
+  background: #f8fafc;
+}
+
+.chartBar {
+  width: 14px;
+  min-height: 6px;
+  border-radius: 999px 999px 4px 4px;
+}
+
+.chartBarFitness,
+.legendFitness {
+  background: #0f766e;
+}
+
+.chartBarFatigue,
+.legendFatigue {
+  background: #f59e0b;
+}
+
+.chartColumn strong {
+  color: #111827;
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.chartColumn > span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.chartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 18px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.chartLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chartLegend i {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.coachButton {
+  width: auto;
+  margin: 0;
+}
+
+.coachEmpty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 18px;
+  color: #64748b;
+  background: #f8fafc;
+  line-height: 1.45;
+}
+
+.coachInsightGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.coachInsightGrid div {
+  border: 1px solid #d7e5df;
+  border-radius: 16px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.coachInsightGrid span {
+  display: block;
+  margin-bottom: 8px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.coachInsightGrid strong,
+.coachInsightGrid p {
+  color: #111827;
+  line-height: 1.45;
+}
+
+.coachInsightGrid p {
+  margin-bottom: 0;
+}
+
+.calendarWeekdays,
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.calendarWeekdays {
+  margin-bottom: 8px;
+}
+
+.calendarWeekdays span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.calendarDay {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  min-height: 82px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: white;
+  color: #111827;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.calendarDay:disabled {
+  cursor: default;
+}
+
+.calendarDayMuted {
+  opacity: 0.45;
+}
+
+.calendarDayHasRun {
+  border-color: #99d7ca;
+  background: #ecfdf5;
+}
+
+.calendarDayHasPlan {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.calendarDayHasRun.calendarDayHasPlan {
+  background: linear-gradient(135deg, #ecfdf5 0 50%, #eff6ff 50% 100%);
+}
+
+.calendarDayHasRun:hover {
+  border-color: #0f766e;
+  transform: translateY(-1px);
+}
+
+.calendarDay span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.calendarDayDetails {
+  display: grid;
+  gap: 4px;
+}
+
+.calendarDay strong,
+.calendarDay em {
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.calendarDay strong {
+  color: #111827;
+  font-size: 15px;
+}
+
+.calendarDay em {
+  color: #1d4ed8;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.zonesLayout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.zonesLayout h3 {
+  margin-bottom: 14px;
+  font-size: 20px;
+}
+
+.compactZoneGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.compactZoneGrid div {
+  border: 1px solid #d7e5df;
+  border-radius: 14px;
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 12px;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.compactZoneGrid span {
+  grid-row: span 2;
+  color: #0f766e;
+  font-weight: 900;
+}
+
+.compactZoneGrid strong {
+  overflow: hidden;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactZoneGrid p {
+  margin-bottom: 0;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 /* FITNESS SUMMARY */
 
 .summaryGrid {
@@ -1031,6 +1571,8 @@ h3 {
   .dashboardGrid,
   .contentGrid,
   .summaryGrid,
+  .analyticsGrid,
+  .zonesLayout,
   .planHero {
     grid-template-columns: 1fr;
   }
@@ -1046,8 +1588,25 @@ h3 {
   .planMetricGrid,
   .zoneGrid,
   .loadMetricGrid,
+  .fitnessChart,
+  .planGoalGrid,
   .planWeekList {
     grid-template-columns: 1fr;
+  }
+
+  .fitnessChart {
+    min-height: auto;
+  }
+
+  .chartColumn {
+    grid-template-columns: minmax(64px, 80px) 40px 48px;
+    grid-template-rows: auto;
+    align-items: center;
+    text-align: left;
+  }
+
+  .chartBars {
+    height: 72px;
   }
 }
 
@@ -1125,8 +1684,24 @@ h3 {
   .goalButtons,
   .pastRaceForm,
   .detectedRaceBox,
-  .statsGrid {
+  .planRaceGrid,
+  .planIntakeGrid,
+  .statsGrid,
+  .calendarWeekdays,
+  .calendarGrid {
     grid-template-columns: 1fr;
+  }
+
+  .planNotesField {
+    grid-column: auto;
+  }
+
+  .modalActions {
+    flex-direction: column;
+  }
+
+  .calendarWeekdays {
+    display: none;
   }
 
   .heroCard h2 {

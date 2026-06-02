@@ -9,14 +9,19 @@ export type TrainingLoadMetrics = {
   explanation: string;
 };
 
-//Calculate total miles
+export type TrainingLoadTimelinePoint = TrainingLoadMetrics & {
+  date: string;
+  totalMiles: number;
+};
+
+// Total mileage is the simplest base metric used across cards and reports.
 export function calculateTotalMiles(runs: Run[]) {
   return runs.reduce((sum, run) => {
     return sum + run.distanceMiles;
   }, 0);
 }
 
-//calculate longest run
+// Longest run matters because longer race goals need enough endurance exposure.
 export function calculateLongestRun(runs: Run[]) {
   if (runs.length === 0) {
     return 0;
@@ -25,12 +30,13 @@ export function calculateLongestRun(runs: Run[]) {
   return Math.max(...runs.map((run) => run.distanceMiles));
 }
 
-//calculate number of runs
+// Run count is a basic consistency signal.
 export function calculateNumberOfRuns(runs: Run[]) {
   return runs.length;
 }
 
-//calculate fitness score
+// The score is intentionally simple: mileage, long run, consistency, workouts,
+// and whether the longest run dominates the week too much.
 export function calculateFitnessScore(runs: Run[]) {
   const totalMiles = calculateTotalMiles(runs);
   const longestRun = calculateLongestRun(runs);
@@ -64,7 +70,7 @@ export function calculateFitnessScore(runs: Run[]) {
   return Math.round(Math.min(totalScore, 100));
 }
 
-//calculate race predictions Riegel Formula
+// Riegel's formula estimates race time when converting from one distance to another.
 function convertMinutesToRaceTime(totalMinutes: number) {
   const totalSeconds = Math.round(totalMinutes * 60);
   const hours = Math.floor(totalSeconds / 3600);
@@ -89,8 +95,6 @@ function predictRaceTime(
   return knownTimeMinutes * Math.pow(goalDistanceMiles / knownDistanceMiles, fatigueFactor);
 }
 
-//
-
 function convertRaceDistanceToMiles(raceDistance: string) {
   if (raceDistance === "5K") {
     return 3.1;
@@ -106,8 +110,6 @@ function convertRaceDistanceToMiles(raceDistance: string) {
 
   return 26.2;
 }
-//
-
 function getRunTimeMs(run: Run) {
   return new Date(`${run.date}T00:00:00`).getTime();
 }
@@ -142,6 +144,16 @@ function getWindowRuns(runs: Run[], windowDays: number) {
   });
 }
 
+function formatDateForPoint(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+// Effort and heart-rate multipliers turn distance into a rough stress score.
+// This is not a lab-grade TSS model; it gives the dashboard a consistent signal.
 function getEffortMultiplier(run: Run) {
   if (run.effort === "Hard") {
     return 1.35;
@@ -226,8 +238,6 @@ export function convertRaceTimeToMinutes(raceTime: string) {
   return 0;
 }
 
-//
-
 export function calculateRacePredictions(
   runs: Run[],
   pastRaceDistance: string,
@@ -307,8 +317,7 @@ export function calculateRacePredictions(
   };
 }
 
-//fitness breakdown
-
+// These labels are used by the summary card to keep the explanation readable.
 export function calculateFitnessBreakdown(runs: Run[]) {
   const totalMiles = calculateTotalMiles(runs);
   const longestRun = calculateLongestRun(runs);
@@ -324,7 +333,7 @@ export function calculateFitnessBreakdown(runs: Run[]) {
   
 }
 
-//Calculate training load
+// This older load label is kept for summaries that only need Low/Moderate/High.
 export function calculateTrainingLoad(runs: Run[]) {
   const totalMiles = calculateTotalMiles(runs);
 
@@ -340,6 +349,7 @@ export function calculateTrainingLoad(runs: Run[]) {
 }
 
 export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
+  // Acute load = recent fatigue. Chronic load = longer baseline fitness.
   const acuteRuns = getWindowRuns(runs, 7);
   const chronicRuns = getWindowRuns(runs, 42);
   const acuteLoad = acuteRuns.reduce(
@@ -386,4 +396,29 @@ export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
   };
 }
 
-//Select goal time
+export function calculateTrainingLoadTimeline(
+  runs: Run[],
+  numberOfWeeks = 8
+): TrainingLoadTimelinePoint[] {
+  if (runs.length === 0) {
+    return [];
+  }
+
+  const latestRunTime = Math.max(...runs.map(getRunTimeMs));
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+
+  // Build one weekly snapshot per chart column, moving from oldest to newest.
+  return Array.from({ length: numberOfWeeks }, (_, index) => {
+    const weeksBack = numberOfWeeks - 1 - index;
+    const pointDate = new Date(latestRunTime - weeksBack * 7 * millisecondsPerDay);
+    const pointDateString = formatDateForPoint(pointDate);
+    const pointRuns = runs.filter((run) => getRunTimeMs(run) <= pointDate.getTime());
+    const recentRuns = getWindowRuns(pointRuns, 7);
+
+    return {
+      date: pointDateString,
+      totalMiles: Number(calculateTotalMiles(recentRuns).toFixed(1)),
+      ...calculateTrainingLoadMetrics(pointRuns),
+    };
+  });
+}

@@ -8,6 +8,7 @@ import {
   calculateTotalMiles,
   calculateTrainingLoad,
   calculateTrainingLoadMetrics,
+  calculateTrainingLoadTimeline,
   convertRaceTimeToMinutes,
 } from "./fitnessCalculations";
 
@@ -158,6 +159,17 @@ describe("fitness calculations", () => {
       status: "Overreaching",
       explanation:
         "Your last 7 days are much heavier than your 6-week baseline, so fatigue risk is elevated.",
+    });
+  });
+
+  it("builds a weekly training load timeline", () => {
+    const timeline = calculateTrainingLoadTimeline(baseRuns, 3);
+
+    expect(timeline).toHaveLength(3);
+    expect(timeline[2]).toMatchObject({
+      date: "2026-05-07",
+      totalMiles: 38,
+      acuteLoad: 43,
     });
   });
 });
