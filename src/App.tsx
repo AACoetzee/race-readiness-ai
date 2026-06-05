@@ -28,6 +28,7 @@ const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
 const TREND_WINDOW_DAYS = 90;
+const RECENT_BASELINE_WINDOW_DAYS = 42;
 const SAVED_TRAINING_PLAN_KEY = "race-readiness-training-plan";
 const SAVED_PLAN_PREFERENCES_KEY = "race-readiness-plan-preferences";
 type PageView = "dashboard" | "trainingPlan" | "activityDetail";
@@ -665,6 +666,7 @@ const summarySectionRef = useRef<HTMLElement | null>(null);
 
 const [pastRaceDate, setPastRaceDate] = useState("2026-05-01");
 const [goalRaceDate, setGoalRaceDate] = useState("2026-10-12");
+const [calendarReferenceDate, setCalendarReferenceDate] = useState(() => new Date());
 
 const today = new Date();
 
@@ -680,6 +682,16 @@ const weeksUntilGoalRace = Math.max(
 
 function clearAiSummary() {
   setAiSummary(null);
+}
+
+function changeCalendarMonth(monthOffset: number) {
+  setCalendarReferenceDate((currentMonth) => {
+    return new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth() + monthOffset,
+      1
+    );
+  });
 }
 
 const trainingRuns = getWindowRuns(runs, TRAINING_WINDOW_DAYS);
@@ -708,9 +720,18 @@ const trendAverageWeeklyRuns = trendNumberOfRuns / (TREND_WINDOW_DAYS / 7);
 const planTrendRuns = trendRuns.filter((run) => !run.isRace);
 const planSourceRuns = planTrendRuns.length > 0 ? planTrendRuns : trendRuns;
 const planTrendLongestRun = calculateLongestRun(planSourceRuns);
+const recentPlanRuns = getWindowRuns(planSourceRuns, RECENT_BASELINE_WINDOW_DAYS);
+const recentAverageWeeklyMiles = getAverageWeeklyMiles(
+  recentPlanRuns,
+  RECENT_BASELINE_WINDOW_DAYS
+);
+// Use the stronger sustained baseline so one quiet week does not reset the plan.
+const planBaselineWeeklyMiles = Math.max(
+  trendAverageWeeklyMiles,
+  recentAverageWeeklyMiles
+);
 const fitnessTimeline = calculateTrainingLoadTimeline(trendRuns, 8);
 const plannedWorkouts = getPlannedWorkouts(trainingPlan, currentDate, planPreferences);
-const calendarReferenceDate = new Date(`${currentDate}T00:00:00`);
 const calendarDays = getCalendarDays(runs, plannedWorkouts, calendarReferenceDate);
 const calendarMonthLabel = getCalendarMonthLabel(calendarReferenceDate);
 const heartRateZones = createHeartRateZones(observedMaxHeartRate);
@@ -948,6 +969,8 @@ async function handleGenerateTrainingPlan() {
         currentDate,
         weeksUntilGoalRace,
         trendAverageWeeklyMiles,
+        recentAverageWeeklyMiles,
+        planBaselineWeeklyMiles,
         trendLongestRun: planTrendLongestRun,
         trendNumberOfRuns,
         selectedGoalTime,
@@ -1379,7 +1402,9 @@ const planIntakeModal = isPlanIntakeOpen ? (
       <div className="planIntakeSummary">
         <p>
           Strava base: {formatMiles(trendAverageWeeklyMiles)} mi/wk over 90
-          days, longest non-race run {formatMiles(planTrendLongestRun)} mi,{" "}
+          days and {formatMiles(recentAverageWeeklyMiles)} mi/wk over the latest
+          6 weeks. Plan baseline: {formatMiles(planBaselineWeeklyMiles)} mi/wk,
+          longest non-race run {formatMiles(planTrendLongestRun)} mi,{" "}
           {trendNumberOfRuns} recent activities.
         </p>
       </div>
@@ -2057,6 +2082,34 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <p className="eyebrow">Training Calendar</p>
             <h2>{calendarMonthLabel}</h2>
             <p>Click a day with a run to open its activity details.</p>
+          </div>
+
+          <div className="calendarControls">
+            <button
+              className="calendarArrowButton"
+              type="button"
+              aria-label="Previous month"
+              title="Previous month"
+              onClick={() => changeCalendarMonth(-1)}
+            >
+              &larr;
+            </button>
+            <button
+              className="calendarTodayButton"
+              type="button"
+              onClick={() => setCalendarReferenceDate(new Date())}
+            >
+              Today
+            </button>
+            <button
+              className="calendarArrowButton"
+              type="button"
+              aria-label="Next month"
+              title="Next month"
+              onClick={() => changeCalendarMonth(1)}
+            >
+              &rarr;
+            </button>
           </div>
         </div>
 

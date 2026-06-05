@@ -626,6 +626,20 @@ function validateTrainingPlanRequest(body) {
     errors.push("trendAverageWeeklyMiles must be a non-negative number.");
   }
 
+  if (
+    !isFiniteNumber(body.recentAverageWeeklyMiles) ||
+    body.recentAverageWeeklyMiles < 0
+  ) {
+    errors.push("recentAverageWeeklyMiles must be a non-negative number.");
+  }
+
+  if (
+    !isFiniteNumber(body.planBaselineWeeklyMiles) ||
+    body.planBaselineWeeklyMiles < 0
+  ) {
+    errors.push("planBaselineWeeklyMiles must be a non-negative number.");
+  }
+
   if (!isFiniteNumber(body.trendLongestRun) || body.trendLongestRun < 0) {
     errors.push("trendLongestRun must be a non-negative number.");
   }
@@ -749,41 +763,114 @@ function getObservedMaxHeartRate(activities) {
   return validHeartRates.length > 0 ? Math.max(...validHeartRates) : null;
 }
 
-function normalizeTrainingPlan(plan, goalRace, trendAverageWeeklyMiles) {
+function normalizeTrainingPlan(
+  plan,
+  goalRace,
+  planBaselineWeeklyMiles,
+  planPreferences
+) {
   const longRunCap = getTrainingPlanLongRunCap(goalRace);
-  const startingMileage = Math.max(10, trendAverageWeeklyMiles);
+  const startingMileage = Math.max(10, planBaselineWeeklyMiles);
+  const hasInjuryLimitation =
+    planPreferences?.injuryStatus &&
+    planPreferences.injuryStatus !== "No current injury";
+  const isPrGoal = planPreferences?.goalFocus?.toLowerCase().includes("pr");
+  const peakMultiplier = hasInjuryLimitation
+    ? 1
+    : planPreferences?.planStyle === "Aggressive but sensible"
+      ? 1.5
+      : planPreferences?.planStyle === "Conservative"
+        ? 1.15
+        : planPreferences?.planStyle === "Low intensity / high consistency"
+          ? 1.25
+          : isPrGoal
+            ? 1.4
+            : 1.25;
   let previousMileage = startingMileage;
 
   return {
     ...plan,
-    weeks: plan.weeks.map((week) => {
-      // Hard safety rails run after AI generation so the plan cannot jump wildly.
+    weeks: plan.weeks.map((week, index) => {
+      // Safety rails prevent both unrealistic jumps and needless loss of an established base.
       const isCutbackWeek = week.week > 1 && week.week % 4 === 0;
+      const weeksRemaining = plan.weeks.length - index;
+      const isRaceWeek = weeksRemaining === 1;
+      const isTaperWeek = weeksRemaining === 2;
+      const buildProgress = Math.min(
+        1,
+        index / Math.max(1, plan.weeks.length - 3)
+      );
+      const progressiveBaseline =
+        startingMileage * (1 + (peakMultiplier - 1) * buildProgress);
       const maxMileage = isCutbackWeek
-        ? previousMileage
-        : Math.max(startingMileage, previousMileage * 1.15);
-      const targetMiles = Math.max(
-        0,
-        Number(Math.min(week.targetMiles, maxMileage).toFixed(1))
+        ? previousMileage * 0.9
+        : Math.max(startingMileage, previousMileage * 1.15, progressiveBaseline);
+      const baselineRatio = hasInjuryLimitation
+        ? 0.75
+        : isRaceWeek
+          ? 0.5
+          : isTaperWeek
+            ? 0.7
+            : isCutbackWeek
+              ? 0.8
+              : 1;
+      const minimumMileage = isRaceWeek || isTaperWeek
+        ? startingMileage * baselineRatio
+        : progressiveBaseline * baselineRatio;
+      const targetMiles = Number(
+        Math.min(Math.max(week.targetMiles, minimumMileage), maxMileage).toFixed(1)
       );
       const weeklyLongRunCap = Math.min(longRunCap, Math.max(3, targetMiles * 0.45));
-      const longRunMiles = Math.max(
-        0,
-        Number(Math.min(week.longRunMiles, weeklyLongRunCap).toFixed(1))
+      const minimumLongRun = isRaceWeek || isTaperWeek
+        ? 0
+        : Math.min(
+            longRunCap,
+            Math.max(6, targetMiles * (isCutbackWeek ? 0.22 : 0.28))
+          );
+      const longRunMiles = Number(
+        Math.min(
+          Math.max(week.longRunMiles, minimumLongRun),
+          weeklyLongRunCap
+        ).toFixed(1)
       );
+      const phase = isRaceWeek
+        ? "Race week"
+        : isTaperWeek
+          ? "Taper"
+          : isCutbackWeek
+            ? "Recovery"
+            : buildProgress < 0.35
+              ? "Base"
+              : buildProgress < 0.75
+                ? "Build"
+                : "Race-specific";
+      const hasPrematureRaceLanguage =
+        !isRaceWeek &&
+        !isTaperWeek &&
+        /\b(taper|race week|post[- ]?race|transition)\b/i.test(
+          `${week.phase} ${week.workoutFocus} ${week.notes}`
+        );
       previousMileage = targetMiles;
 
       return {
         ...week,
+        phase,
         targetMiles,
         longRunMiles,
+        workoutFocus: hasPrematureRaceLanguage
+          ? "One controlled race-specific workout; keep the remaining runs easy"
+          : week.workoutFocus,
+        notes: hasPrematureRaceLanguage
+          ? `Continue building toward race day; keep the requested ${planPreferences?.longRunDay || "weekend"} long run and ${planPreferences?.restDay || "preferred"} rest day.`
+          : week.notes,
       };
     }),
     assumptions: [
       ...plan.assumptions,
       `${goalRace} long runs are capped near ${longRunCap} miles; race-tagged activities inform fitness but are not treated as normal weekly long runs.`,
-      `Weekly mileage starts from about ${trendAverageWeeklyMiles.toFixed(1)} miles per week based on the recent training trend.`,
-      "Safety rules are applied after AI generation: weekly mileage jumps are capped, long runs are capped, and every fourth week is treated conservatively.",
+      `Weekly mileage starts from a demonstrated baseline of about ${planBaselineWeeklyMiles.toFixed(1)} miles per week.`,
+      `The selected goal and plan style support a sensible peak near ${(startingMileage * peakMultiplier).toFixed(1)} miles per week.`,
+      "Safety rules are applied after AI generation: normal weeks preserve and gradually build the demonstrated base, mileage jumps and long runs are capped, and recovery/taper weeks can drop lower.",
     ].slice(0, 6),
   };
 }
@@ -1075,6 +1162,8 @@ app.post("/api/training-plan", async (req, res) => {
     currentDate,
     weeksUntilGoalRace,
     trendAverageWeeklyMiles,
+    recentAverageWeeklyMiles,
+    planBaselineWeeklyMiles,
     trendLongestRun,
     trendNumberOfRuns,
     selectedGoalTime,
@@ -1094,6 +1183,8 @@ app.post("/api/training-plan", async (req, res) => {
     weeksUntilGoalRace,
     planWeeks,
     trendAverageWeeklyMiles,
+    recentAverageWeeklyMiles,
+    planBaselineWeeklyMiles,
     trendLongestRun,
     trendNumberOfRuns,
     selectedGoalTime,
@@ -1135,6 +1226,11 @@ Rules:
 - Use the 90-day non-race training run list, average weekly mileage, longest non-race run, run frequency, recent race tag, and observed heart-rate data.
 - Use planPreferences to shape the plan around the runner's goal, available days per week, long-run day, rest day, style preference, injury status, and notes.
 - Treat Strava history as the baseline. Do not create a plan that ignores the runner's recent mileage and frequency.
+- The demonstrated plan baseline is ${planBaselineWeeklyMiles.toFixed(1)} miles per week, using the stronger sustained signal from the 90-day average (${trendAverageWeeklyMiles.toFixed(1)}) and latest 6-week average (${recentAverageWeeklyMiles.toFixed(1)}).
+- Do not prescribe normal training weeks below that demonstrated baseline unless planPreferences reports an injury or limitation. Recovery, taper, and race weeks may be lower.
+- When there is enough time before race day and no injury limitation, build toward a meaningful peak above the demonstrated baseline instead of merely maintaining or detraining. For a healthy balanced PR attempt, target roughly 35-40% above baseline by the peak phase.
+- The goal race occurs in week ${planWeeks}, the final week of the plan. Never place race week, post-race recovery, or transition weeks before the final week.
+- Taper only immediately before the goal race. Do not begin a multi-week taper far ahead of race day.
 - Return whyThisPlan as 3-5 short reasons explaining which Strava trends and setup answers shaped the plan.
 - If lockedWeeks are supplied, preserve their intent and avoid contradicting them.
 - The supplied mostRecentRace is a fitness anchor, not a normal long-run training baseline.
@@ -1167,7 +1263,14 @@ Rules:
       throw new Error("AI response did not match the expected training plan shape.");
     }
 
-    res.json(normalizeTrainingPlan(parsed, goalRace, trendAverageWeeklyMiles));
+    res.json(
+      normalizeTrainingPlan(
+        parsed,
+        goalRace,
+        planBaselineWeeklyMiles,
+        planPreferences
+      )
+    );
   } catch (error) {
     console.error(error);
     sendFallbackTrainingPlan(res, 500);
