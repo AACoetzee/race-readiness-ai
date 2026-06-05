@@ -21,6 +21,7 @@ import StatCard from "./components/StatCard";
 import RunCard from "./components/RunCard";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const AI_SUMMARY_URL = `${API_BASE_URL}/api/ai-summary`;
 const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
 const COACH_CHECK_IN_URL = `${API_BASE_URL}/api/coach-check-in`;
 const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
@@ -703,6 +704,7 @@ const fitnessScore = calculateFitnessScore(trainingRuns);
 const trendLongestRun = calculateLongestRun(trendRuns);
 const trendNumberOfRuns = calculateNumberOfRuns(trendRuns);
 const trendAverageWeeklyMiles = getAverageWeeklyMiles(trendRuns, TREND_WINDOW_DAYS);
+const trendAverageWeeklyRuns = trendNumberOfRuns / (TREND_WINDOW_DAYS / 7);
 const planTrendRuns = trendRuns.filter((run) => !run.isRace);
 const planSourceRuns = planTrendRuns.length > 0 ? planTrendRuns : trendRuns;
 const planTrendLongestRun = calculateLongestRun(planSourceRuns);
@@ -753,6 +755,7 @@ const paceZones = createPaceZones(goalRace, selectedGoalTime);
 }>(null);
 
 const [isLoadingCoach, setIsLoadingCoach] = useState(false);
+const [isLoadingAI, setIsLoadingAI] = useState(false);
 const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
 
@@ -1034,6 +1037,61 @@ function handleClearTrainingPlan() {
   setTrainingPlan(null);
   setPageView("dashboard");
   setActionMessage("Saved training plan cleared.");
+}
+
+async function handleRefreshAISummary() {
+  setIsLoadingAI(true);
+  setActionMessage("Refreshing AI fitness summary...");
+
+  try {
+    const response = await fetch(AI_SUMMARY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        totalMiles,
+        longestRun,
+        numberOfRuns,
+        fitnessScore,
+        trainingLoad,
+        trendWindowDays: TREND_WINDOW_DAYS,
+        trendTotalMiles: calculateTotalMiles(trendRuns),
+        trendLongestRun,
+        trendNumberOfRuns,
+        trendAverageWeeklyMiles,
+        goalRace,
+        selectedGoalTime,
+        pastRaceDistance: effectivePastRaceDistance,
+        pastRaceTime: effectivePastRaceTime,
+        pastRaceDate: effectivePastRaceDate,
+        raceDataSource,
+        currentDate,
+        daysSincePastRace,
+        weeksSincePastRace,
+        goalRaceDate,
+        weeksUntilGoalRace,
+        trainingWindowDays: TRAINING_WINDOW_DAYS,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.summary || "Could not refresh AI summary.");
+    }
+
+    setAiSummary(data);
+    setActionMessage("AI fitness summary refreshed from current Strava data.");
+  } catch (error) {
+    console.error(error);
+    setActionMessage(
+      error instanceof Error
+        ? error.message
+        : "Could not refresh AI fitness summary."
+    );
+  } finally {
+    setIsLoadingAI(false);
+  }
 }
 
 async function handleGenerateCoachCheckIn() {
@@ -1355,6 +1413,10 @@ const planIntakeModal = isPlanIntakeOpen ? (
   numberOfRuns,
   fitnessScore,
   trainingLoad,
+  trainingStatus: trainingLoadMetrics.status,
+  trendAverageWeeklyMiles,
+  trendLongestRun,
+  trendAverageWeeklyRuns,
   goalRace,
   selectedGoalTime,
 });
@@ -2112,7 +2174,19 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
       {dashboardView === "coach" && (
       <section className="card" ref={summarySectionRef}>
-        <h2>Fitness Summary</h2>
+        <div className="sectionHeader">
+          <div>
+            <h2>AI Fitness Summary</h2>
+            <p>Refresh after importing Strava to update strengths, risks, and suggestions.</p>
+          </div>
+          <button
+            className="aiButton coachButton"
+            onClick={handleRefreshAISummary}
+            disabled={isLoadingAI || !isPastRaceTimeValid}
+          >
+            {isLoadingAI ? "Refreshing..." : "Refresh AI Summary"}
+          </button>
+        </div>
         
         <h3>{aiSummary ? aiSummary.headline : aiCoachSummary.headline}</h3>
 
@@ -2141,10 +2215,14 @@ const planIntakeModal = isPlanIntakeOpen ? (
   <div className="insightBox">
     <p className="insightLabel">Strengths</p>
     <ul>
-      {(aiSummary ? aiSummary.strengths : aiCoachSummary.strengths).map(
-        (strength) => (
+      {(aiSummary ? aiSummary.strengths : aiCoachSummary.strengths).length > 0 ? (
+        (aiSummary ? aiSummary.strengths : aiCoachSummary.strengths).map(
+          (strength) => (
           <li key={strength}>{strength}</li>
+          )
         )
+      ) : (
+        <li>No clear strengths detected from the current data yet.</li>
       )}
     </ul>
   </div>

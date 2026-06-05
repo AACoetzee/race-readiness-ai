@@ -4,6 +4,10 @@ type AICoachSummaryInput = {
   numberOfRuns: number;
   fitnessScore: number;
   trainingLoad: string;
+  trainingStatus: string;
+  trendAverageWeeklyMiles: number;
+  trendLongestRun: number;
+  trendAverageWeeklyRuns: number;
   goalRace: string;
   selectedGoalTime: string;
 };
@@ -14,6 +18,10 @@ export function generateAICoachSummary({
   numberOfRuns,
   fitnessScore,
   trainingLoad,
+  trainingStatus,
+  trendAverageWeeklyMiles,
+  trendLongestRun,
+  trendAverageWeeklyRuns,
   goalRace,
   selectedGoalTime,
 }: AICoachSummaryInput) {
@@ -21,28 +29,39 @@ export function generateAICoachSummary({
   const risks: string[] = [];
   const suggestions: string[] = [];
 
-  if (totalMiles >= 50) {
-    strengths.push("You have a solid weekly mileage base.");
+  // Use the longer trend for strengths so one unusual week does not erase them.
+  if (trendAverageWeeklyMiles >= 30) {
+    strengths.push(`Your 90-day mileage base is strong at ${trendAverageWeeklyMiles.toFixed(1)} mi/wk.`);
+  } else if (trendAverageWeeklyMiles >= 20) {
+    strengths.push(`You have a solid 90-day mileage base of ${trendAverageWeeklyMiles.toFixed(1)} mi/wk.`);
   } else {
-    risks.push("Your weekly mileage is still fairly low.");
+    risks.push("Your 90-day weekly mileage base is still fairly low.");
     suggestions.push("Build mileage slowly before targeting longer races.");
   }
 
-  if (longestRun >= 13) {
-    strengths.push("Your long run shows good endurance.");
+  if (trendLongestRun >= 13) {
+    strengths.push(`Your ${trendLongestRun.toFixed(1)}-mile long run shows good endurance.`);
+  } else if (trendLongestRun >= 9) {
+    strengths.push("Your recent long-run history gives you a useful endurance base.");
   } else {
     risks.push("Your long run is still short for longer race goals.");
     suggestions.push("Increase your long run gradually over time.");
   }
 
-  if (numberOfRuns >= 5) {
-    strengths.push("You are running consistently.");
+  if (trendAverageWeeklyRuns >= 4) {
+    strengths.push(`You are consistently averaging ${trendAverageWeeklyRuns.toFixed(1)} runs per week.`);
   } else {
     risks.push("Your running frequency is a little low.");
     suggestions.push("Try to build toward 4 runs per week.");
   }
 
-  if (goalRace === "Marathon" && longestRun < 15) {
+  if (trainingStatus === "Building") {
+    strengths.push("Your recent training load shows that you are building fitness.");
+  } else if (trainingStatus === "Maintaining") {
+    strengths.push("Your recent training load is steady and consistent.");
+  }
+
+  if (goalRace === "Marathon" && trendLongestRun < 15) {
     risks.push("The marathon estimate is less reliable because the long run is not very long yet.");
     suggestions.push("Add more long-run history before trusting the marathon prediction.");
   }
