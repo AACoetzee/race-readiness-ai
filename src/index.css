@@ -1209,6 +1209,64 @@ h3 {
   padding: 24px;
 }
 
+.activityAiCard {
+  margin-bottom: 24px;
+  border-color: #a7d7cb;
+  background: #f3fbf8;
+}
+
+.activityAiSummary {
+  max-width: 900px;
+  color: #334155;
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.activityAiGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.activityAiGrid > div {
+  border: 1px solid #d7e5df;
+  border-radius: 8px;
+  padding: 16px;
+  background: white;
+}
+
+.activityAiGrid span {
+  display: block;
+  margin-bottom: 8px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.activityAiGrid p,
+.activityAiGrid ul {
+  margin: 0;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.activityAiGrid ul {
+  padding-left: 18px;
+}
+
+.activityAiLimitations {
+  margin-top: 12px;
+  border-left: 3px solid #94a3b8;
+  padding: 10px 12px;
+  color: #475569;
+  font-size: 13px;
+}
+
+.activityAiLimitations p {
+  margin: 4px 0 0;
+}
+
 .activityWideCard {
   grid-column: 1 / -1;
 }
@@ -1768,7 +1826,8 @@ h3 {
   .activityGrid,
   .activityMetricList,
   .activityTagGrid,
-  .activityLoadSummary {
+  .activityLoadSummary,
+  .activityAiGrid {
     grid-template-columns: 1fr;
   }
 

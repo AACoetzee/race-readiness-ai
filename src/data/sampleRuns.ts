@@ -12,6 +12,11 @@ export type Run = {
   maxHeartRate?: number;
   elevationGainFeet?: number;
   averageCadence?: number;
+  temperatureF?: number;
+  feelsLikeF?: number;
+  humidityPercent?: number;
+  windSpeedMph?: number;
+  weatherSummary?: string;
   isRace?: boolean;
   raceDistance?: "5K" | "10K" | "Half Marathon" | "Marathon";
   source?: "Sample" | "Strava" | "Import";

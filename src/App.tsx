@@ -44,6 +44,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, ""
 const AI_SUMMARY_URL = `${API_BASE_URL}/api/ai-summary`;
 const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
 const COACH_CHECK_IN_URL = `${API_BASE_URL}/api/coach-check-in`;
+const ACTIVITY_INSIGHT_URL = `${API_BASE_URL}/api/activity-insight`;
 const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
@@ -122,6 +123,16 @@ type CoachInsight = {
   watchOut: string;
 };
 
+type ActivityInsight = {
+  headline: string;
+  summary: string;
+  effortAssessment: string;
+  positives: string[];
+  watchOuts: string[];
+  nextStep: string;
+  dataLimitations: string[];
+};
+
 type PlannedWorkout = {
   date: string;
   title: string;
@@ -169,6 +180,16 @@ function isRun(value: unknown): value is Run {
     (run.averageCadence === undefined ||
       (typeof run.averageCadence === "number" &&
         Number.isFinite(run.averageCadence))) &&
+    (run.temperatureF === undefined ||
+      (typeof run.temperatureF === "number" && Number.isFinite(run.temperatureF))) &&
+    (run.feelsLikeF === undefined ||
+      (typeof run.feelsLikeF === "number" && Number.isFinite(run.feelsLikeF))) &&
+    (run.humidityPercent === undefined ||
+      (typeof run.humidityPercent === "number" &&
+        Number.isFinite(run.humidityPercent))) &&
+    (run.windSpeedMph === undefined ||
+      (typeof run.windSpeedMph === "number" && Number.isFinite(run.windSpeedMph))) &&
+    (run.weatherSummary === undefined || typeof run.weatherSummary === "string") &&
     (run.stravaActivityId === undefined ||
       (typeof run.stravaActivityId === "number" &&
         Number.isFinite(run.stravaActivityId)))
@@ -529,6 +550,27 @@ function isCoachInsightResponse(value: unknown): value is CoachInsight {
   );
 }
 
+function isActivityInsightResponse(value: unknown): value is ActivityInsight {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const insight = value as ActivityInsight;
+
+  return (
+    typeof insight.headline === "string" &&
+    typeof insight.summary === "string" &&
+    typeof insight.effortAssessment === "string" &&
+    Array.isArray(insight.positives) &&
+    insight.positives.every((item) => typeof item === "string") &&
+    Array.isArray(insight.watchOuts) &&
+    insight.watchOuts.every((item) => typeof item === "string") &&
+    typeof insight.nextStep === "string" &&
+    Array.isArray(insight.dataLimitations) &&
+    insight.dataLimitations.every((item) => typeof item === "string")
+  );
+}
+
 function isStoredTrainingPlan(value: unknown): value is TrainingPlan {
   if (!isTrainingPlanResponse(value)) {
     return false;
@@ -808,6 +850,8 @@ const paceZones = createPaceZones(goalRace, selectedGoalTime);
 const [isLoadingCoach, setIsLoadingCoach] = useState(false);
 const [isLoadingAI, setIsLoadingAI] = useState(false);
 const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
+const [activityInsights, setActivityInsights] = useState<Record<string, ActivityInsight>>({});
+const [isLoadingActivityInsight, setIsLoadingActivityInsight] = useState(false);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
 
 useEffect(() => {
@@ -869,6 +913,59 @@ function handleSelectRun(run: Run) {
   setPageView("activityDetail");
   setActionMessage("");
   window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Generate once per activity, then reuse the cached result when revisiting it.
+  if (!activityInsights[getActivityInsightKey(run)]) {
+    void handleGenerateActivityInsight(run);
+  }
+}
+
+function getActivityInsightKey(run: Run) {
+  return String(run.stravaActivityId ?? `${run.date}-${run.type}-${run.distanceMiles}`);
+}
+
+async function handleGenerateActivityInsight(run: Run) {
+  const runStress = Number(calculateRunTrainingStress(run).toFixed(1));
+
+  setIsLoadingActivityInsight(true);
+
+  try {
+    const response = await fetch(ACTIVITY_INSIGHT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        run,
+        maxHeartRateUsed: effectiveMaxHeartRate,
+        heartRateZones,
+        paceZones,
+        activityLoad: runStress,
+        activityLoadLabel: getRunStressLabel(runStress),
+        trainingLoadMetrics,
+        trendAverageWeeklyMiles,
+        goalRace,
+        selectedGoalTime,
+      }),
+    });
+    const data = await response.json();
+
+    if (!response.ok || !isActivityInsightResponse(data)) {
+      throw new Error(data.summary || "Could not analyze this activity.");
+    }
+
+    setActivityInsights((current) => ({
+      ...current,
+      [getActivityInsightKey(run)]: data,
+    }));
+  } catch (error) {
+    console.error(error);
+    setActionMessage(
+      error instanceof Error ? error.message : "Could not analyze this activity."
+    );
+  } finally {
+    setIsLoadingActivityInsight(false);
+  }
 }
 
 function handleImportDataClick() {
@@ -1508,6 +1605,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
   if (pageView === "activityDetail" && selectedRun) {
     const runStress = Number(calculateRunTrainingStress(selectedRun).toFixed(1));
     const stressLabel = getRunStressLabel(runStress);
+    const activityInsight = activityInsights[getActivityInsightKey(selectedRun)];
 
     return (
       <main className="app">
@@ -1548,6 +1646,62 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <span className="pill">{selectedRun.effort}</span>
             <span className="pill">{stressLabel} load</span>
           </div>
+        </section>
+
+        <section className="card activityAiCard">
+          <div className="sectionHeader">
+            <div>
+              <p className="eyebrow">AI Activity Analysis</p>
+              <h2>
+                {activityInsight?.headline ??
+                  (isLoadingActivityInsight ? "Analyzing this run..." : "Understand this run")}
+              </h2>
+              <p>
+                Analyzes pace, heart rate and zones, elevation, cadence, weather
+                when available, and your wider training context.
+              </p>
+            </div>
+          </div>
+
+          {activityInsight ? (
+            <>
+              <p className="activityAiSummary">{activityInsight.summary}</p>
+              <div className="activityAiGrid">
+                <div>
+                  <span>Effort assessment</span>
+                  <p>{activityInsight.effortAssessment}</p>
+                </div>
+                <div>
+                  <span>Next step</span>
+                  <p>{activityInsight.nextStep}</p>
+                </div>
+                <div>
+                  <span>Positives</span>
+                  <ul>
+                    {activityInsight.positives.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+                <div>
+                  <span>Watch-outs</span>
+                  <ul>
+                    {activityInsight.watchOuts.map((item) => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+              </div>
+              {activityInsight.dataLimitations.length > 0 && (
+                <div className="activityAiLimitations">
+                  <strong>Data limitations</strong>
+                  <p>{activityInsight.dataLimitations.join(" ")}</p>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="coachEmpty">
+              {isLoadingActivityInsight
+                ? "Using this activity's training data to build your summary..."
+                : "Click this activity again to retry its analysis."}
+            </p>
+          )}
         </section>
 
         <section className="activityGrid">
@@ -1621,6 +1775,10 @@ const planIntakeModal = isPlanIntakeOpen ? (
               <div>
                 <span>Workout Type</span>
                 <strong>{selectedRun.stravaWorkoutType ?? "Not available"}</strong>
+              </div>
+              <div>
+                <span>Weather</span>
+                <strong>{selectedRun.weatherSummary ?? "Not available"}</strong>
               </div>
             </div>
           </div>

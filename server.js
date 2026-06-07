@@ -134,6 +134,29 @@ const coachInsightSchema = {
   },
 };
 
+const activityInsightSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "headline",
+    "summary",
+    "effortAssessment",
+    "positives",
+    "watchOuts",
+    "nextStep",
+    "dataLimitations",
+  ],
+  properties: {
+    headline: { type: "string" },
+    summary: { type: "string" },
+    effortAssessment: { type: "string" },
+    positives: { type: "array", items: { type: "string" } },
+    watchOuts: { type: "array", items: { type: "string" } },
+    nextStep: { type: "string" },
+    dataLimitations: { type: "array", items: { type: "string" } },
+  },
+};
+
 const fallbackSummary = {
   headline: "AI summary is unavailable right now.",
   summary: "The app could not generate an AI summary. Try again later.",
@@ -160,6 +183,16 @@ const fallbackCoachInsight = {
   whatChanged: "The app could not generate a training check-in.",
   nextMove: "Use the dashboard load trend and recent run list as your guide for now.",
   watchOut: "Try again later if the AI backend is unavailable.",
+};
+
+const fallbackActivityInsight = {
+  headline: "Activity analysis is unavailable right now.",
+  summary: "The app could not analyze this activity. Try again later.",
+  effortAssessment: "Unavailable",
+  positives: [],
+  watchOuts: [],
+  nextStep: "Use the activity metrics as your guide for now.",
+  dataLimitations: [],
 };
 
 app.use(
@@ -279,7 +312,11 @@ function mapStravaActivityToRun(activity, observedMaxHeartRate) {
     elevationGainFeet: activity.total_elevation_gain
       ? Number(metersToFeet(activity.total_elevation_gain).toFixed(0))
       : undefined,
-    averageCadence: activity.average_cadence,
+    // Strava reports running cadence as foot-strike cycles per minute.
+    // Multiply by two to show the steps-per-minute value runners normally use.
+    averageCadence: activity.average_cadence
+      ? Number((activity.average_cadence * 2).toFixed(1))
+      : undefined,
     isRace,
     raceDistance: isRace ? getRaceDistance(distanceMiles) : undefined,
     source: "Strava",
@@ -615,6 +652,13 @@ function isValidRun(value) {
       isFiniteNumber(value.elevationGainFeet)) &&
     (value.averageCadence === undefined ||
       isFiniteNumber(value.averageCadence)) &&
+    (value.temperatureF === undefined || isFiniteNumber(value.temperatureF)) &&
+    (value.feelsLikeF === undefined || isFiniteNumber(value.feelsLikeF)) &&
+    (value.humidityPercent === undefined ||
+      isFiniteNumber(value.humidityPercent)) &&
+    (value.windSpeedMph === undefined || isFiniteNumber(value.windSpeedMph)) &&
+    (value.weatherSummary === undefined ||
+      isNonEmptyString(value.weatherSummary)) &&
     (value.stravaActivityId === undefined ||
       isFiniteNumber(value.stravaActivityId)) &&
     (value.isRace === undefined || typeof value.isRace === "boolean") &&
@@ -756,6 +800,25 @@ function validateCoachInsight(insight) {
     isNonEmptyString(insight.whatChanged) &&
     isNonEmptyString(insight.nextMove) &&
     isNonEmptyString(insight.watchOut)
+  );
+}
+
+function validateActivityInsight(insight) {
+  if (!insight || typeof insight !== "object" || Array.isArray(insight)) {
+    return false;
+  }
+
+  return (
+    isNonEmptyString(insight.headline) &&
+    isNonEmptyString(insight.summary) &&
+    isNonEmptyString(insight.effortAssessment) &&
+    Array.isArray(insight.positives) &&
+    insight.positives.every(isNonEmptyString) &&
+    Array.isArray(insight.watchOuts) &&
+    insight.watchOuts.every(isNonEmptyString) &&
+    isNonEmptyString(insight.nextStep) &&
+    Array.isArray(insight.dataLimitations) &&
+    insight.dataLimitations.every(isNonEmptyString)
   );
 }
 
@@ -927,6 +990,13 @@ function sendFallbackTrainingPlan(res, status, plan) {
 function sendFallbackCoachInsight(res, status, insight) {
   res.status(status).json({
     ...fallbackCoachInsight,
+    ...insight,
+  });
+}
+
+function sendFallbackActivityInsight(res, status, insight) {
+  res.status(status).json({
+    ...fallbackActivityInsight,
     ...insight,
   });
 }
@@ -1396,6 +1466,78 @@ Rules:
   } catch (error) {
     console.error(error);
     sendFallbackCoachInsight(res, 500);
+  }
+});
+
+app.post("/api/activity-insight", async (req, res) => {
+  if (!req.body || typeof req.body !== "object" || !isValidRun(req.body.run)) {
+    sendFallbackActivityInsight(res, 400, {
+      summary: "A valid run is required before the activity can be analyzed.",
+    });
+    return;
+  }
+
+  if (!openai) {
+    sendFallbackActivityInsight(res, 503, {
+      summary: "The backend is missing an OpenAI API key.",
+    });
+    return;
+  }
+
+  // Keep this payload focused on the selected activity and the context needed
+  // to judge it. Missing weather data is intentionally left missing.
+  const activityData = {
+    run: req.body.run,
+    maxHeartRateUsed: req.body.maxHeartRateUsed,
+    heartRateZones: req.body.heartRateZones,
+    paceZones: req.body.paceZones,
+    activityLoad: req.body.activityLoad,
+    activityLoadLabel: req.body.activityLoadLabel,
+    trainingLoadMetrics: req.body.trainingLoadMetrics,
+    trendAverageWeeklyMiles: req.body.trendAverageWeeklyMiles,
+    goalRace: req.body.goalRace,
+    selectedGoalTime: req.body.selectedGoalTime,
+  };
+
+  try {
+    const response = await openai.responses.create({
+      model: AI_MODEL,
+      input: `
+You are a practical running coach analyzing one completed activity.
+
+Data:
+${JSON.stringify(activityData, null, 2)}
+
+Rules:
+- Analyze pace, heart rate relative to the supplied max and zones, elevation, cadence, activity load, and broader training context.
+- Discuss weather only when weather fields are present. If they are absent, explicitly list weather as a data limitation and do not guess.
+- Do not claim exact time spent in heart-rate zones; only average and max heart rate are available.
+- Treat missing data as missing. Never invent values.
+- Explain whether the effort looks appropriate for the activity name and effort label.
+- Give useful positives, watch-outs, and one sensible next step.
+- Use plain English. Do not provide medical advice.
+- Keep the response concise but specific to this activity.
+      `,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "race_readiness_activity_insight",
+          schema: activityInsightSchema,
+          strict: true,
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.output_text);
+
+    if (!validateActivityInsight(parsed)) {
+      throw new Error("AI response did not match the expected activity insight shape.");
+    }
+
+    res.json(parsed);
+  } catch (error) {
+    console.error(error);
+    sendFallbackActivityInsight(res, 500, {});
   }
 });
 
