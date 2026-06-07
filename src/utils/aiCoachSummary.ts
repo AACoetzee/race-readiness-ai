@@ -25,6 +25,8 @@ export function generateAICoachSummary({
   goalRace,
   selectedGoalTime,
 }: AICoachSummaryInput) {
+  // This is a fast local summary, not an OpenAI call. It gives the dashboard a
+  // useful answer immediately and acts as a fallback when the backend is offline.
   const strengths: string[] = [];
   const risks: string[] = [];
   const suggestions: string[] = [];

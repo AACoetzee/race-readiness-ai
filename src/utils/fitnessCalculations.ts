@@ -90,6 +90,8 @@ function predictRaceTime(
   knownTimeMinutes: number,
   goalDistanceMiles: number
 ) {
+  // The exponent makes longer-distance predictions slower than a simple
+  // distance multiplication because runners fatigue as races get longer.
   const fatigueFactor = 1.06;
 
   return knownTimeMinutes * Math.pow(goalDistanceMiles / knownDistanceMiles, fatigueFactor);
@@ -244,6 +246,12 @@ export function calculateRacePredictions(
   pastRaceTime: string,
   weeksUntilGoalRace = 0
 ) {
+  /*
+   * Start with Riegel's formula using the known race result, then add small
+   * penalties when the training history does not support the longer distance.
+   * If race day is still far away, penalties are reduced because there is time
+   * to build fitness before the goal race.
+   */
   const recentEffortDistanceMiles = convertRaceDistanceToMiles(pastRaceDistance);
   const recentEffortTimeMinutes = convertRaceTimeToMinutes(pastRaceTime);
 
@@ -350,6 +358,7 @@ export function calculateTrainingLoad(runs: Run[]) {
 
 export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
   // Acute load = recent fatigue. Chronic load = longer baseline fitness.
+  // Comparing them answers: "Was this week much harder or easier than normal?"
   const acuteRuns = getWindowRuns(runs, 7);
   const chronicRuns = getWindowRuns(runs, 42);
   const acuteLoad = acuteRuns.reduce(

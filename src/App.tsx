@@ -26,6 +26,20 @@ import {
 import StatCard from "./components/StatCard";
 import RunCard from "./components/RunCard";
 
+/*
+ * FRONTEND MAP
+ *
+ * This file is the main React screen. It does four large jobs:
+ * 1. Stores the user's data and choices in React state.
+ * 2. Calculates useful numbers from the run data.
+ * 3. Calls the backend for Strava data and AI-generated content.
+ * 4. Chooses which page or dashboard section to display.
+ *
+ * A future cleanup could split these jobs into smaller components and hooks.
+ */
+
+// These URLs point to routes in server.js. An empty API_BASE_URL means the
+// frontend and backend are reached through the same host during development.
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const AI_SUMMARY_URL = `${API_BASE_URL}/api/ai-summary`;
 const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
@@ -37,10 +51,16 @@ const TREND_WINDOW_DAYS = 90;
 const RECENT_BASELINE_WINDOW_DAYS = 42;
 const SAVED_TRAINING_PLAN_KEY = "race-readiness-training-plan";
 const SAVED_PLAN_PREFERENCES_KEY = "race-readiness-plan-preferences";
+const SAVED_MAX_HEART_RATE_KEY = "race-readiness-max-heart-rate";
+
+// A union type is a short list of the only allowed string values.
+// TypeScript will warn us if we accidentally use an unknown page name.
 type PageView = "dashboard" | "trainingPlan" | "activityDetail";
 type DashboardView = "overview" | "calendar" | "activities" | "zones" | "coach";
 
 function getStorage() {
+  // localStorage belongs to the browser. The try/catch prevents the whole app
+  // from crashing in environments where browser storage is blocked.
   try {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
@@ -111,6 +131,8 @@ type PlannedWorkout = {
 };
 
 function isRun(value: unknown): value is Run {
+  // Imported JSON and API responses cannot be trusted automatically.
+  // This "type guard" checks the data at runtime before the app uses it as a Run.
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -582,10 +604,12 @@ function getRunHeartRatePercent(run: Run, observedMaxHeartRate: number | null) {
     return "Not available";
   }
 
-  return `${Math.round((run.averageHeartRate / observedMaxHeartRate) * 100)}% of observed max`;
+  return `${Math.round((run.averageHeartRate / observedMaxHeartRate) * 100)}% of max used`;
 }
 
 function App() {
+// React state is the app's short-term memory. Calling a matching "set" function
+// updates the value and causes React to redraw the affected screen.
 const [goalRace, setGoalRace] = useState("Half Marathon");
 const [pastRaceDistance, setPastRaceDistance] = useState("5K");
 const [pastRaceTime, setPastRaceTime] = useState("00:00"); 
@@ -616,6 +640,8 @@ const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(() => {
 });
 const [selectedRun, setSelectedRun] = useState<Run | null>(null);
 const [planPreferences, setPlanPreferences] = useState<TrainingPlanPreferences>(() => {
+  // Saved preferences are merged over defaults. This lets us safely add a new
+  // preference later without breaking people who have older saved data.
   const defaultPreferences = {
     goalFocus: "Run a smart PR attempt",
     daysPerWeek: 5,
@@ -648,12 +674,20 @@ const summarySectionRef = useRef<HTMLElement | null>(null);
 const [pastRaceDate, setPastRaceDate] = useState("2026-05-01");
 const [goalRaceDate, setGoalRaceDate] = useState("2026-10-12");
 const [calendarReferenceDate, setCalendarReferenceDate] = useState(() => new Date());
+const [configuredMaxHeartRate, setConfiguredMaxHeartRate] = useState<number | null>(() => {
+  const storedMaxHeartRate = Number(getStorage()?.getItem(SAVED_MAX_HEART_RATE_KEY));
+
+  return storedMaxHeartRate >= 100 && storedMaxHeartRate <= 240
+    ? storedMaxHeartRate
+    : null;
+});
 
 const today = new Date();
 
 const goalDate = new Date(goalRaceDate);
 const currentDate = formatDateForInput(today);
 
+// Dates are stored as real Date objects for math, but shown/sent as YYYY-MM-DD.
 const weeksUntilGoalRace = Math.max(
   0,
   Math.ceil(
@@ -662,6 +696,7 @@ const weeksUntilGoalRace = Math.max(
 );
 
 function clearAiSummary() {
+  // Old AI text becomes misleading after the underlying run data changes.
   setAiSummary(null);
 }
 
@@ -675,6 +710,15 @@ function changeCalendarMonth(monthOffset: number) {
   });
 }
 
+/*
+ * DERIVED DATA
+ *
+ * These values are calculated from state on every render. They do not need
+ * their own state because React can always recreate them from `runs`.
+ *
+ * The 7-day window describes "right now." The 90-day window describes the
+ * runner's real base and prevents one strange week from controlling the app.
+ */
 const trainingRuns = getWindowRuns(runs, TRAINING_WINDOW_DAYS);
 const trendRuns = getWindowRuns(runs, TREND_WINDOW_DAYS);
 const observedMaxHeartRate = getObservedMaxHeartRate(trendRuns);
@@ -699,6 +743,8 @@ const trendNumberOfRuns = calculateNumberOfRuns(trendRuns);
 const trendAverageWeeklyMiles = getAverageWeeklyMiles(trendRuns, TREND_WINDOW_DAYS);
 const trendAverageWeeklyRuns = trendNumberOfRuns / (TREND_WINDOW_DAYS / 7);
 const planTrendRuns = trendRuns.filter((run) => !run.isRace);
+// Race efforts prove fitness, but including a marathon as a normal training run
+// would exaggerate the weekly baseline used to build the training plan.
 const planSourceRuns = planTrendRuns.length > 0 ? planTrendRuns : trendRuns;
 const planTrendLongestRun = calculateLongestRun(planSourceRuns);
 const recentPlanRuns = getWindowRuns(planSourceRuns, RECENT_BASELINE_WINDOW_DAYS);
@@ -715,7 +761,9 @@ const fitnessTimeline = calculateTrainingLoadTimeline(trendRuns, 8);
 const plannedWorkouts = getPlannedWorkouts(trainingPlan, currentDate, planPreferences);
 const calendarDays = getCalendarDays(runs, plannedWorkouts, calendarReferenceDate);
 const calendarMonthLabel = getCalendarMonthLabel(calendarReferenceDate);
-const heartRateZones = createHeartRateZones(observedMaxHeartRate);
+// A known max HR is more accurate than simply using the highest recent Strava reading.
+const effectiveMaxHeartRate = configuredMaxHeartRate ?? observedMaxHeartRate;
+const heartRateZones = createHeartRateZones(effectiveMaxHeartRate);
 const maxChartLoad = Math.max(
   1,
   ...fitnessTimeline.flatMap((point) => [point.acuteLoad, point.chronicLoad])
@@ -735,6 +783,7 @@ const trainingLoad = calculateTrainingLoad(trainingRuns);
 const trainingLoadMetrics = calculateTrainingLoadMetrics(trendRuns);
 
 const selectedGoalTime = racePredictions
+  // Pick the prediction that matches the race selected by the user.
   ? goalRace === "5K"
     ? racePredictions.fiveK
     : goalRace === "10K"
@@ -762,6 +811,8 @@ const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
 
 useEffect(() => {
+  // useEffect runs after React renders. This effect watches `trainingPlan` and
+  // copies each change into browser storage.
   // Persist plan edits, locks, and generated weeks so refreshes do not wipe progress.
   const storage = getStorage();
 
@@ -778,6 +829,7 @@ useEffect(() => {
 }, [trainingPlan]);
 
 useEffect(() => {
+  // This separate effect saves the questionnaire answers whenever they change.
   const storage = getStorage();
 
   if (storage) {
@@ -787,6 +839,21 @@ useEffect(() => {
     );
   }
 }, [planPreferences]);
+
+useEffect(() => {
+  const storage = getStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  if (configuredMaxHeartRate) {
+    storage.setItem(SAVED_MAX_HEART_RATE_KEY, String(configuredMaxHeartRate));
+    return;
+  }
+
+  storage.removeItem(SAVED_MAX_HEART_RATE_KEY);
+}, [configuredMaxHeartRate]);
 
 function handleAnalyzeFitness() {
   setPageView("dashboard");
@@ -809,6 +876,12 @@ function handleImportDataClick() {
 }
 
 async function handleImportStravaRuns() {
+  // Frontend API pattern:
+  // 1. Show a loading state.
+  // 2. Ask the backend for data.
+  // 3. Validate the response.
+  // 4. Put valid data into React state.
+  // 5. Always turn loading off in `finally`.
   setIsImportingStrava(true);
   setActionMessage("Importing runs from Strava...");
 
@@ -887,6 +960,8 @@ function handleResetSampleData() {
 }
 
 function handleExportReport() {
+  // A Blob is an in-memory file. The temporary link tells the browser to
+  // download that file without needing another backend route.
   const report = {
     generatedAt: new Date().toISOString(),
     currentDate,
@@ -932,7 +1007,8 @@ function handleExportReport() {
 }
 
 async function handleGenerateTrainingPlan() {
-  const observedMaxHeartRate = getObservedMaxHeartRate(planSourceRuns);
+  // Only non-race trend runs are sent as the normal training baseline.
+  // Locked weeks are also sent so a regeneration can respect manual edits.
   const lockedWeeks = trainingPlan?.weeks.filter((week) => week.locked) ?? [];
 
   setIsGeneratingTrainingPlan(true);
@@ -957,7 +1033,7 @@ async function handleGenerateTrainingPlan() {
         selectedGoalTime,
         raceDataSource,
         mostRecentRace,
-        observedMaxHeartRate,
+        observedMaxHeartRate: effectiveMaxHeartRate,
         trendRuns: planSourceRuns,
         planPreferences,
         lockedWeeks,
@@ -972,8 +1048,8 @@ async function handleGenerateTrainingPlan() {
     // If the user locked weeks locally, keep those edits after the AI returns a new plan.
     setTrainingPlan({
       ...data,
-      heartRateMax: observedMaxHeartRate,
-      heartRateZones: createHeartRateZones(observedMaxHeartRate),
+      heartRateMax: effectiveMaxHeartRate,
+      heartRateZones: createHeartRateZones(effectiveMaxHeartRate),
       weeks: data.weeks.map((week) => {
         const lockedWeek = lockedWeeks.find(
           (candidate) => candidate.week === week.week
@@ -1044,6 +1120,8 @@ function handleClearTrainingPlan() {
 }
 
 async function handleRefreshAISummary() {
+  // The backend receives facts and calculations, then asks the AI to explain
+  // them. Sending the facts explicitly reduces made-up AI conclusions.
   setIsLoadingAI(true);
   setActionMessage("Refreshing AI fitness summary...");
 
@@ -1512,7 +1590,11 @@ const planIntakeModal = isPlanIntakeOpen ? (
               </div>
               <div>
                 <span>Relative Effort</span>
-                <strong>{getRunHeartRatePercent(selectedRun, observedMaxHeartRate)}</strong>
+                <strong>{getRunHeartRatePercent(selectedRun, effectiveMaxHeartRate)}</strong>
+              </div>
+              <div>
+                <span>Max Used for Zones</span>
+                <strong>{effectiveMaxHeartRate ? `${effectiveMaxHeartRate} bpm` : "No HR data"}</strong>
               </div>
               <div>
                 <span>Observed Max</span>
@@ -1671,8 +1753,8 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <StatCard title="90-Day Avg" value={`${formatMiles(trendAverageWeeklyMiles)} mi/wk`} />
             <StatCard title="AI Confidence" value={trainingPlan.confidence} />
             <StatCard
-              title="Observed Max HR"
-              value={trainingPlan.heartRateMax ? `${trainingPlan.heartRateMax} bpm` : "No HR"}
+              title="Max HR Used"
+              value={effectiveMaxHeartRate ? `${effectiveMaxHeartRate} bpm` : "No HR"}
             />
           </div>
         </section>
@@ -1682,13 +1764,14 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <div>
               <h2>Heart Rate Guidance</h2>
               <p>
-                These are guidance ranges from observed HR data, not exact time-in-zone totals.
+                These are guidance ranges from your configured or observed max HR,
+                not exact time-in-zone totals.
               </p>
             </div>
           </div>
 
           <div className="zoneGrid">
-            {trainingPlan.heartRateZones.map((zone) => (
+            {heartRateZones.map((zone) => (
               <div className="zoneBox" key={zone.name}>
                 <span>{zone.name}</span>
                 <strong>{zone.range}</strong>
@@ -1830,43 +1913,54 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
 
     <main className="app">
-      <header className="topBar">
-        <div>
-          <p className="eyebrow">Race Readiness AI</p>
-          <h1>Running Fitness Dashboard</h1>
-        </div>
+    <header className="topBar">
+  <div>
+    <p className="eyebrow">Race Readiness AI</p>
+    <h1>Running Fitness Dashboard</h1>
+    <p className="topBarSubtitle">
+      Estimate race potential using training data, race formulas, and AI
+      coaching insight.
+    </p>
+  </div>
 
-        <div className="buttonRow">
-          <button className="secondaryButton" onClick={handleImportDataClick}>
-            Import Data
-          </button>
-          <button
-            className="secondaryButton"
-            onClick={handleImportStravaRuns}
-            disabled={isImportingStrava}
-          >
-            {isImportingStrava ? "Importing..." : "Import Strava"}
-          </button>
-          <button className="primaryButton" onClick={handleAnalyzeFitness}>
-            Analyze Fitness
-          </button>
-          <button
-            className="planButton"
-            onClick={handleOpenPlanIntake}
-            disabled={isGeneratingTrainingPlan}
-          >
-            {isGeneratingTrainingPlan ? "Generating..." : "Generate Training Plan"}
-          </button>
-        </div>
+  <div className="topBarActions">
+    <div className="topBarPills">
+      <span>Formula-based predictions</span>
+      <span>AI coaching summary</span>
+    </div>
 
-        <input
-          ref={importInputRef}
-          className="hiddenFileInput"
-          type="file"
-          accept="application/json,.json"
-          onChange={handleImportRuns}
-        />
-      </header>
+    <div className="buttonRow">
+      <button className="secondaryButton" onClick={handleImportDataClick}>
+        Import Data
+      </button>
+      <button
+        className="secondaryButton"
+        onClick={handleImportStravaRuns}
+        disabled={isImportingStrava}
+      >
+        {isImportingStrava ? "Importing..." : "Import Strava"}
+      </button>
+      <button className="primaryButton" onClick={handleAnalyzeFitness}>
+        Analyze Fitness
+      </button>
+      <button
+        className="planButton"
+        onClick={handleOpenPlanIntake}
+        disabled={isGeneratingTrainingPlan}
+      >
+        {isGeneratingTrainingPlan ? "Generating..." : "Generate Training Plan"}
+      </button>
+    </div>
+  </div>
+
+  <input
+    ref={importInputRef}
+    className="hiddenFileInput"
+    type="file"
+    accept="application/json,.json"
+    onChange={handleImportRuns}
+  />
+</header>
 
       {actionMessage && <p className="actionStatus">{actionMessage}</p>}
 
@@ -2135,6 +2229,48 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <p className="eyebrow">Zones</p>
             <h2>HR and pace guidance</h2>
             <p>These are practical buckets for planning. Exact zones can be refined later.</p>
+          </div>
+        </div>
+
+        <div className="heartRateSettings">
+          <div>
+            <span>Observed from Strava</span>
+            <strong>
+              {observedMaxHeartRate ? `${observedMaxHeartRate} bpm` : "No HR data"}
+            </strong>
+            <p>The highest heart rate found in the latest 90 days.</p>
+          </div>
+
+          <label>
+            Max HR used for zones
+            <input
+              type="number"
+              min="100"
+              max="240"
+              placeholder={observedMaxHeartRate ? String(observedMaxHeartRate) : "Enter max HR"}
+              value={configuredMaxHeartRate ?? ""}
+              onChange={(event) => {
+                const nextHeartRate = Number(event.target.value);
+
+                setConfiguredMaxHeartRate(
+                  nextHeartRate >= 100 && nextHeartRate <= 240
+                    ? nextHeartRate
+                    : null
+                );
+              }}
+            />
+            <small>
+              Leave blank to use the observed Strava maximum. Enter your tested
+              or known max HR for more accurate zones.
+            </small>
+          </label>
+
+          <div>
+            <span>Currently using</span>
+            <strong>
+              {effectiveMaxHeartRate ? `${effectiveMaxHeartRate} bpm` : "No HR data"}
+            </strong>
+            <p>{configuredMaxHeartRate ? "Your configured maximum." : "The observed Strava maximum."}</p>
           </div>
         </div>
 

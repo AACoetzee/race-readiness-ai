@@ -5,6 +5,17 @@ import OpenAI from "openai";
 
 dotenv.config();
 
+/*
+ * BACKEND MAP
+ *
+ * The browser never talks directly to Strava or OpenAI. It talks to this
+ * Express server instead. That keeps secret API keys out of frontend code.
+ *
+ * Main flow:
+ * browser request -> validate input -> call Strava/OpenAI -> validate result
+ * -> apply app safety rules -> return JSON to the browser
+ */
+
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
 const AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
@@ -19,6 +30,8 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+// JSON schemas tell OpenAI the exact response shape we expect. Without them,
+// the model could return prose that the frontend cannot reliably display.
 const aiSummarySchema = {
   type: "object",
   additionalProperties: false,
@@ -151,6 +164,7 @@ const fallbackCoachInsight = {
 
 app.use(
   cors({
+    // CORS decides which browser origins may call this backend.
     origin(origin, callback) {
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
@@ -163,6 +177,8 @@ app.use(
 );
 app.use(express.json({ limit: "100kb" }));
 
+// When no OpenAI key exists, `openai` is null and AI routes return a clear
+// fallback response instead of crashing the server.
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
@@ -186,6 +202,8 @@ function formatPace(minutesPerMile) {
 }
 
 function estimateEffort(activity, observedMaxHeartRate) {
+  // This converts messy Strava activity information into the app's simple
+  // Easy / Moderate / Hard labels.
   const activityName = String(activity.name || "").toLowerCase();
 
   // Prefer Strava tags and workout-like names over heart-rate guesses.
@@ -240,6 +258,8 @@ function getRaceDistance(distanceMiles) {
 }
 
 function mapStravaActivityToRun(activity, observedMaxHeartRate) {
+  // Strava uses meters, seconds, and snake_case property names. The frontend
+  // uses miles and a smaller Run shape, so this function translates between them.
   const distanceMiles = metersToMiles(activity.distance);
   const movingTimeMinutes = activity.moving_time / 60;
   const paceMinutesPerMile =
@@ -463,6 +483,8 @@ function isValidDateString(value) {
 }
 
 function validateAiSummaryRequest(body) {
+  // Validation is a gate at the edge of the server. Bad or missing frontend
+  // data stops here instead of reaching OpenAI and causing confusing output.
   const errors = [];
   const validGoalRaces = ["5K", "10K", "Half Marathon", "Marathon"];
   const validTrainingLoads = ["Low", "Moderate", "High"];
@@ -570,6 +592,8 @@ function validateAiSummaryRequest(body) {
 }
 
 function isValidRun(value) {
+  // The server uses the same principle as the frontend: outside data must prove
+  // it has every required field before the rest of the app trusts it.
   return (
     value &&
     typeof value === "object" &&
@@ -769,6 +793,15 @@ function normalizeTrainingPlan(
   planBaselineWeeklyMiles,
   planPreferences
 ) {
+  /*
+   * The AI proposes a plan, but this function has the final word.
+   *
+   * It protects against plans that:
+   * - start far below the runner's demonstrated mileage,
+   * - increase too quickly,
+   * - put race week before the actual final week,
+   * - prescribe an excessively long long run.
+   */
   const longRunCap = getTrainingPlanLongRunCap(goalRace);
   const startingMileage = Math.max(10, planBaselineWeeklyMiles);
   const hasInjuryLimitation =
@@ -800,6 +833,8 @@ function normalizeTrainingPlan(
         1,
         index / Math.max(1, plan.weeks.length - 3)
       );
+      // buildProgress moves from 0 near the start to 1 near the peak. That lets
+      // us gradually raise the minimum expected mileage across the plan.
       const progressiveBaseline =
         startingMileage * (1 + (peakMultiplier - 1) * buildProgress);
       const maxMileage = isCutbackWeek
@@ -897,6 +932,7 @@ function sendFallbackCoachInsight(res, status, insight) {
 }
 
 app.get("/api/strava/connect", (_req, res) => {
+  // This starts Strava OAuth by redirecting the browser to Strava's consent page.
   const missingConfig = validateStravaOAuthConfig();
 
   if (missingConfig.length > 0) {
@@ -916,6 +952,8 @@ app.get("/api/strava/connect", (_req, res) => {
 });
 
 app.get("/api/strava/callback", async (req, res) => {
+  // Strava redirects here after approval. We exchange the one-time code for
+  // tokens and show the refresh token that belongs in the local .env file.
   const code = req.query.code;
 
   if (!isNonEmptyString(code)) {
@@ -972,6 +1010,7 @@ app.get("/api/strava/callback", async (req, res) => {
 });
 
 app.get("/api/strava/runs", async (req, res) => {
+  // This is the route called by the frontend's "Import Strava" button.
   const missingConfig = validateStravaConfig();
 
   if (missingConfig.length > 0) {
@@ -1011,6 +1050,8 @@ app.get("/api/strava/runs", async (req, res) => {
 });
 
 app.post("/api/ai-summary", async (req, res) => {
+  // Route pattern: validate input, make an AI request, validate AI output, then
+  // apply deterministic rules before returning it.
   const validationErrors = validateAiSummaryRequest(req.body);
 
   if (validationErrors.length > 0) {
@@ -1140,6 +1181,8 @@ Do not overpromise race results.
 });
 
 app.post("/api/training-plan", async (req, res) => {
+  // The model creates the creative part of the plan. normalizeTrainingPlan()
+  // then enforces mileage, long-run, recovery, taper, and race-week rules.
   const validationErrors = validateTrainingPlanRequest(req.body);
 
   if (validationErrors.length > 0) {

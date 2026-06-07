@@ -1,3 +1,5 @@
+// This type is the app's shared definition of a run. Most fields after `effort`
+// are optional because a manual import may not contain everything Strava provides.
 export type Run = {
   date: string;
   type: string;
@@ -17,6 +19,7 @@ export type Run = {
   stravaWorkoutType?: number;
 };
 
+// Sample data lets the interface work before the user connects Strava.
 export const sampleRuns: Run[] = [
   {
     date: "2026-05-01",

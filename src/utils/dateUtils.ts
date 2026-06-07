@@ -1,3 +1,5 @@
+// Return a new Date instead of changing the original Date passed by the caller.
+// Avoiding mutation makes date calculations easier to reason about.
 export function addDays(date: Date, days: number) {
   const nextDate = new Date(date);
   nextDate.setDate(nextDate.getDate() + days);
@@ -5,6 +7,7 @@ export function addDays(date: Date, days: number) {
 }
 
 export function formatDateForInput(date: Date) {
+  // HTML date inputs and API requests use this predictable YYYY-MM-DD format.
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -13,6 +16,8 @@ export function formatDateForInput(date: Date) {
 }
 
 export function getDaysBetweenDates(startDate: string, endDate: Date) {
+  // Adding midnight prevents the current time of day from creating partial-day
+  // differences that round unexpectedly.
   const start = new Date(`${startDate}T00:00:00`);
   const end = new Date(`${formatDateForInput(endDate)}T00:00:00`);
   const millisecondsPerDay = 1000 * 60 * 60 * 24;
