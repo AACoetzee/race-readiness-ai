@@ -8,7 +8,7 @@ import {
   calculateLongestRun,
   calculateNumberOfRuns,
   calculateTotalMiles,
-  calculateRacePredictions,
+  calculateRacePredictionsFromHistory,
   calculateFitnessBreakdown,
   calculateTrainingLoad,
   calculateTrainingLoadMetrics,
@@ -817,7 +817,7 @@ const maxAbsoluteForm = Math.max(
 );
 
 const racePredictions = isPastRaceTimeValid
-  ? calculateRacePredictions(
+  ? calculateRacePredictionsFromHistory(
       trendRuns,
       effectivePastRaceDistance,
       effectivePastRaceTime,
@@ -1388,7 +1388,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
         {mostRecentRace ? (
           <div className="planDetectedRace">
-            <span>Race-tagged Strava baseline</span>
+            <span>Most recent race tag</span>
             <strong>{effectivePastRaceDistance} - {effectivePastRaceTime}</strong>
             <p>{mostRecentRace.type} on {effectivePastRaceDate}</p>
           </div>

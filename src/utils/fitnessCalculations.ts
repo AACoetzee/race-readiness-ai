@@ -14,6 +14,13 @@ export type TrainingLoadTimelinePoint = TrainingLoadMetrics & {
   totalMiles: number;
 };
 
+export type RacePredictions = {
+  fiveK: string;
+  tenK: string;
+  halfMarathon: string;
+  marathon: string;
+};
+
 // Total mileage is the simplest base metric used across cards and reports.
 export function calculateTotalMiles(runs: Run[]) {
   return runs.reduce((sum, run) => {
@@ -261,8 +268,11 @@ export function calculateRacePredictions(
   const trainingWeeks = getTrainingWeeks(runs);
   const averageWeeklyMiles = totalMiles / trainingWeeks;
   const averageWeeklyRuns = numberOfRuns / trainingWeeks;
-  const hasTimeToBuild = weeksUntilGoalRace >= 8;
-  const penaltyWeight = hasTimeToBuild ? 0.4 : 1;
+  // A future goal race gives the runner time to address current training gaps.
+  // Keep penalties meaningful for an imminent race, but do not let today's
+  // mileage make a race many months away look needlessly slow.
+  const penaltyWeight =
+    weeksUntilGoalRace >= 12 ? 0.1 : weeksUntilGoalRace >= 8 ? 0.25 : 1;
 
   function applyPenalty(minutes: number, penalty: number) {
     return minutes * (1 + (penalty - 1) * penaltyWeight);
@@ -322,6 +332,63 @@ export function calculateRacePredictions(
     tenK: convertMinutesToRaceTime(tenKMinutes),
     halfMarathon: convertMinutesToRaceTime(halfMarathonMinutes),
     marathon: convertMinutesToRaceTime(marathonMinutes),
+  };
+}
+
+export function calculateRacePredictionsFromHistory(
+  runs: Run[],
+  fallbackRaceDistance: string,
+  fallbackRaceTime: string,
+  weeksUntilGoalRace = 0
+): RacePredictions {
+  /*
+   * One recent race can be unusually slow because of weather, hills, fatigue,
+   * or because it was not an all-out effort. Compare every race-tagged result
+   * in the supplied history and keep the strongest prediction per distance.
+   */
+  const raceAnchors = runs
+    .filter(
+      (run) =>
+        run.isRace &&
+        run.raceDistance &&
+        typeof run.elapsedTimeSeconds === "number" &&
+        run.elapsedTimeSeconds > 0
+    )
+    .map((run) => ({
+      distance: run.raceDistance as string,
+      time: convertMinutesToRaceTime(run.elapsedTimeSeconds! / 60),
+    }));
+
+  raceAnchors.push({
+    distance: fallbackRaceDistance,
+    time: fallbackRaceTime,
+  });
+
+  const predictionSets = raceAnchors.map((anchor) =>
+    calculateRacePredictions(
+      runs,
+      anchor.distance,
+      anchor.time,
+      weeksUntilGoalRace
+    )
+  );
+
+  function getFastestPrediction(key: keyof RacePredictions) {
+    return predictionSets.reduce((fastest, predictions) => {
+      const candidateMinutes = convertRaceTimeToMinutes(predictions[key]);
+      const fastestMinutes = convertRaceTimeToMinutes(fastest);
+
+      return candidateMinutes > 0 && candidateMinutes < fastestMinutes
+        ? predictions[key]
+        : fastest;
+    }, predictionSets[0][key]);
+  }
+
+  return {
+    fiveK: getFastestPrediction("fiveK"),
+    tenK: getFastestPrediction("tenK"),
+    halfMarathon: getFastestPrediction("halfMarathon"),
+    marathon: getFastestPrediction("marathon"),
   };
 }
 

@@ -5,6 +5,7 @@ import {
   calculateFitnessScore,
   calculateLongestRun,
   calculateRacePredictions,
+  calculateRacePredictionsFromHistory,
   calculateTotalMiles,
   calculateTrainingLoad,
   calculateTrainingLoadMetrics,
@@ -94,6 +95,50 @@ describe("fitness calculations", () => {
     for (const time of Object.values(predictions)) {
       expect(time).not.toMatch(/:60(?:$|:)/);
     }
+  });
+
+  it("uses the strongest recent race tag instead of only the latest race", () => {
+    const raceHistory: Run[] = [
+      ...baseRuns,
+      {
+        date: "2026-04-19",
+        type: "Strong Marathon",
+        distanceMiles: 26.2,
+        pace: "7:18 /mi",
+        effort: "Hard",
+        elapsedTimeSeconds: 3 * 3600 + 11 * 60 + 21,
+        isRace: true,
+        raceDistance: "Marathon",
+      },
+      {
+        date: "2026-06-06",
+        type: "Slower 10K",
+        distanceMiles: 6.2,
+        pace: "6:53 /mi",
+        effort: "Hard",
+        elapsedTimeSeconds: 42 * 60 + 41,
+        isRace: true,
+        raceDistance: "10K",
+      },
+    ];
+
+    const latestRaceOnly = calculateRacePredictions(
+      raceHistory,
+      "10K",
+      "42:41",
+      18
+    );
+    const strongestHistory = calculateRacePredictionsFromHistory(
+      raceHistory,
+      "10K",
+      "42:41",
+      18
+    );
+
+    expect(convertRaceTimeToMinutes(strongestHistory.halfMarathon)).toBeLessThan(
+      convertRaceTimeToMinutes(latestRaceOnly.halfMarathon)
+    );
+    expect(convertRaceTimeToMinutes(strongestHistory.halfMarathon)).toBeLessThan(93);
   });
 
   it("calculates acute load, chronic load, form, and status", () => {
