@@ -810,6 +810,11 @@ const maxChartLoad = Math.max(
   1,
   ...fitnessTimeline.flatMap((point) => [point.acuteLoad, point.chronicLoad])
 );
+const chartScaleMax = Math.ceil(maxChartLoad / 10) * 10;
+const maxAbsoluteForm = Math.max(
+  1,
+  ...fitnessTimeline.map((point) => Math.abs(point.form))
+);
 
 const racePredictions = isPastRaceTimeValid
   ? calculateRacePredictions(
@@ -2180,7 +2185,8 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <h2>Fitness, fatigue, and form</h2>
             <p>
               This compares your last 7 days against your 6-week baseline using
-              mileage, effort, and heart rate when available.
+              mileage, effort, and heart rate when available. These are relative
+              load points, not scores out of 100.
             </p>
           </div>
 
@@ -2193,19 +2199,19 @@ const planIntakeModal = isPlanIntakeOpen ? (
           <div>
             <span>Fatigue</span>
             <strong>{trainingLoadMetrics.acuteLoad}</strong>
-            <p>Last 7 days</p>
+            <p>Load points from last 7 days</p>
           </div>
 
           <div>
             <span>Fitness</span>
             <strong>{trainingLoadMetrics.chronicLoad}</strong>
-            <p>6-week baseline</p>
+            <p>Average weekly load points over 6 weeks</p>
           </div>
 
           <div>
             <span>Form</span>
             <strong>{trainingLoadMetrics.form}</strong>
-            <p>Fitness minus fatigue</p>
+            <p>Positive = fresh; negative = fatigued</p>
           </div>
 
           <div>
@@ -2228,35 +2234,69 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <div>
               <p className="eyebrow">Fitness Chart</p>
               <h2>8-week load trend</h2>
-              <p>Fitness is your 6-week baseline. Fatigue is your last 7 days.</p>
+              <p>
+                Fitness and fatigue use relative load points. Form is fitness
+                minus fatigue and is shown around the zero line below.
+              </p>
             </div>
           </div>
 
-          <div className="fitnessChart">
-            {fitnessTimeline.map((point) => (
-              <div className="chartColumn" key={point.date}>
-                <div className="chartBars">
-                  <span
-                    className="chartBar chartBarFitness"
-                    style={{ height: `${Math.max(6, (point.chronicLoad / maxChartLoad) * 100)}%` }}
-                    title={`Fitness ${point.chronicLoad}`}
-                  />
-                  <span
-                    className="chartBar chartBarFatigue"
-                    style={{ height: `${Math.max(6, (point.acuteLoad / maxChartLoad) * 100)}%` }}
-                    title={`Fatigue ${point.acuteLoad}`}
-                  />
+          <div className="loadChartWithScale">
+            <div className="loadChartScale" aria-hidden="true">
+              <span>{chartScaleMax}</span>
+              <span>{Math.round(chartScaleMax / 2)}</span>
+              <span>0</span>
+            </div>
+
+            <div className="fitnessChart">
+              {fitnessTimeline.map((point) => (
+                <div className="chartColumn" key={point.date}>
+                  <div className="chartBars">
+                    <span
+                      className="chartBar chartBarFitness"
+                      style={{ height: `${Math.max(6, (point.chronicLoad / maxChartLoad) * 100)}%` }}
+                      title={`Fitness ${point.chronicLoad} load points`}
+                    />
+                    <span
+                      className="chartBar chartBarFatigue"
+                      style={{ height: `${Math.max(6, (point.acuteLoad / maxChartLoad) * 100)}%` }}
+                      title={`Fatigue ${point.acuteLoad} load points`}
+                    />
+                  </div>
+                  <strong>{point.form > 0 ? `+${point.form}` : point.form}</strong>
+                  <span>{getShortDateLabel(point.date)}</span>
                 </div>
-                <strong>{point.form}</strong>
-                <span>{getShortDateLabel(point.date)}</span>
-              </div>
-            ))}
+              ))}
+            </div>
+          </div>
+
+          <div className="formChart">
+            <div className="formChartLabel">
+              <strong>Form</strong>
+              <span>Fresh</span>
+              <span>Fatigued</span>
+            </div>
+            <div className="formChartPlot">
+              <div className="formZeroLine"><span>0</span></div>
+              {fitnessTimeline.map((point, index) => (
+                <span
+                  className={`formPoint${point.form >= 0 ? " formPointFresh" : " formPointFatigued"}`}
+                  key={point.date}
+                  style={{
+                    left: `${((index + 0.5) / fitnessTimeline.length) * 100}%`,
+                    top: `${50 - (point.form / maxAbsoluteForm) * 42}%`,
+                  }}
+                  title={`${getShortDateLabel(point.date)} form: ${point.form}`}
+                />
+              ))}
+            </div>
           </div>
 
           <div className="chartLegend">
-            <span><i className="legendFitness" /> Fitness</span>
-            <span><i className="legendFatigue" /> Fatigue</span>
-            <span>Number under each week = form</span>
+            <span><i className="legendFitness" /> Fitness load points</span>
+            <span><i className="legendFatigue" /> Fatigue load points</span>
+            <span><i className="legendFormFresh" /> Positive form = fresher</span>
+            <span><i className="legendFormFatigued" /> Negative form = more fatigued</span>
           </div>
         </section>
         )}
