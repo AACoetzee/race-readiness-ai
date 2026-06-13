@@ -9,6 +9,7 @@ import {
   calculateNumberOfRuns,
   calculateTotalMiles,
   calculateRacePredictionsFromHistory,
+  calculateCurrentRaceCapabilities,
   calculateFitnessBreakdown,
   calculateTrainingLoad,
   calculateTrainingLoadMetrics,
@@ -824,20 +825,27 @@ const racePredictions = isPastRaceTimeValid
       weeksUntilGoalRace
     )
   : null;
+const currentRaceCapabilities = isPastRaceTimeValid
+  ? calculateCurrentRaceCapabilities(
+      runs,
+      effectivePastRaceDistance,
+      effectivePastRaceTime
+    )
+  : null;
 
 const fitnessBreakdown = calculateFitnessBreakdown(trainingRuns);
 const trainingLoad = calculateTrainingLoad(trainingRuns);
 const trainingLoadMetrics = calculateTrainingLoadMetrics(trendRuns);
 
-const selectedGoalTime = racePredictions
+const selectedGoalTime = currentRaceCapabilities
   // Pick the prediction that matches the race selected by the user.
   ? goalRace === "5K"
-    ? racePredictions.fiveK
+    ? currentRaceCapabilities.fiveK
     : goalRace === "10K"
-    ? racePredictions.tenK
+    ? currentRaceCapabilities.tenK
     : goalRace === "Half Marathon"
-    ? racePredictions.halfMarathon
-    : racePredictions.marathon
+    ? currentRaceCapabilities.halfMarathon
+    : currentRaceCapabilities.marathon
   : "Enter a valid time";
 const paceZones = createPaceZones(goalRace, selectedGoalTime);
 
@@ -2177,6 +2185,46 @@ const planIntakeModal = isPlanIntakeOpen ? (
     <StatCard title="Training Status" value={trainingLoadMetrics.status} />
   </section>
 </div>
+
+      {currentRaceCapabilities && (
+        <section className="card capabilityPanel">
+          <div className="sectionHeader">
+            <div>
+              <p className="eyebrow">Current Race Capability</p>
+              <h2>What your imported race history supports today</h2>
+              <p>
+                Equivalent race performances from your strongest imported
+                race-tagged efforts. These do not assume future fitness gains
+                and do not add conservative mileage penalties.
+              </p>
+            </div>
+          </div>
+
+          <div className="capabilityGrid">
+            <div>
+              <span>5K</span>
+              <strong>{currentRaceCapabilities.fiveK}</strong>
+            </div>
+            <div>
+              <span>10K</span>
+              <strong>{currentRaceCapabilities.tenK}</strong>
+            </div>
+            <div>
+              <span>Half Marathon</span>
+              <strong>{currentRaceCapabilities.halfMarathon}</strong>
+            </div>
+            <div>
+              <span>Marathon</span>
+              <strong>{currentRaceCapabilities.marathon}</strong>
+            </div>
+          </div>
+
+          <p className="capabilityNote">
+            Longer-distance results still depend on race-day endurance,
+            fueling, course, and weather.
+          </p>
+        </section>
+      )}
 
       <section className="card loadPanel">
         <div className="sectionHeader">

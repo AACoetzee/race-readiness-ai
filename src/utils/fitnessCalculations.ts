@@ -119,6 +119,30 @@ function convertRaceDistanceToMiles(raceDistance: string) {
 
   return 26.2;
 }
+
+function calculateEquivalentRaceTimes(
+  pastRaceDistance: string,
+  pastRaceTime: string
+): RacePredictions {
+  const knownDistanceMiles = convertRaceDistanceToMiles(pastRaceDistance);
+  const knownTimeMinutes = convertRaceTimeToMinutes(pastRaceTime);
+
+  return {
+    fiveK: convertMinutesToRaceTime(
+      predictRaceTime(knownDistanceMiles, knownTimeMinutes, 3.1)
+    ),
+    tenK: convertMinutesToRaceTime(
+      predictRaceTime(knownDistanceMiles, knownTimeMinutes, 6.2)
+    ),
+    halfMarathon: convertMinutesToRaceTime(
+      predictRaceTime(knownDistanceMiles, knownTimeMinutes, 13.1)
+    ),
+    marathon: convertMinutesToRaceTime(
+      predictRaceTime(knownDistanceMiles, knownTimeMinutes, 26.2)
+    ),
+  };
+}
+
 function getRunTimeMs(run: Run) {
   return new Date(`${run.date}T00:00:00`).getTime();
 }
@@ -389,6 +413,55 @@ export function calculateRacePredictionsFromHistory(
     tenK: getFastestPrediction("tenK"),
     halfMarathon: getFastestPrediction("halfMarathon"),
     marathon: getFastestPrediction("marathon"),
+  };
+}
+
+export function calculateCurrentRaceCapabilities(
+  runs: Run[],
+  fallbackRaceDistance: string,
+  fallbackRaceTime: string
+): RacePredictions {
+  /*
+   * "Current capability" means equivalent race potential shown by completed
+   * race efforts. It intentionally does not add mileage, frequency, or
+   * future-race penalties. Those belong in readiness/coaching context instead.
+   */
+  const raceAnchors = runs
+    .filter(
+      (run) =>
+        run.isRace &&
+        run.raceDistance &&
+        typeof run.elapsedTimeSeconds === "number" &&
+        run.elapsedTimeSeconds > 0
+    )
+    .map((run) => ({
+      distance: run.raceDistance as string,
+      time: convertMinutesToRaceTime(run.elapsedTimeSeconds! / 60),
+    }));
+
+  raceAnchors.push({
+    distance: fallbackRaceDistance,
+    time: fallbackRaceTime,
+  });
+
+  const equivalents = raceAnchors
+    .filter((anchor) => convertRaceTimeToMinutes(anchor.time) > 0)
+    .map((anchor) => calculateEquivalentRaceTimes(anchor.distance, anchor.time));
+
+  function getFastest(key: keyof RacePredictions) {
+    return equivalents.reduce((fastest, prediction) => {
+      return convertRaceTimeToMinutes(prediction[key]) <
+        convertRaceTimeToMinutes(fastest)
+        ? prediction[key]
+        : fastest;
+    }, equivalents[0][key]);
+  }
+
+  return {
+    fiveK: getFastest("fiveK"),
+    tenK: getFastest("tenK"),
+    halfMarathon: getFastest("halfMarathon"),
+    marathon: getFastest("marathon"),
   };
 }
 

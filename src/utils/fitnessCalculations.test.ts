@@ -6,6 +6,7 @@ import {
   calculateLongestRun,
   calculateRacePredictions,
   calculateRacePredictionsFromHistory,
+  calculateCurrentRaceCapabilities,
   calculateTotalMiles,
   calculateTrainingLoad,
   calculateTrainingLoadMetrics,
@@ -139,6 +140,58 @@ describe("fitness calculations", () => {
       convertRaceTimeToMinutes(latestRaceOnly.halfMarathon)
     );
     expect(convertRaceTimeToMinutes(strongestHistory.halfMarathon)).toBeLessThan(93);
+  });
+
+  it("shows current capability without conservative training penalties", () => {
+    const sparseRuns: Run[] = [
+      {
+        date: "2026-05-01",
+        type: "5K Race",
+        distanceMiles: 3.1,
+        pace: "7:15 /mi",
+        effort: "Hard",
+        elapsedTimeSeconds: 22 * 60 + 30,
+        isRace: true,
+        raceDistance: "5K",
+      },
+    ];
+    const capabilities = calculateCurrentRaceCapabilities(
+      sparseRuns,
+      "5K",
+      "22:30"
+    );
+    const readinessPrediction = calculateRacePredictions(
+      sparseRuns,
+      "5K",
+      "22:30"
+    );
+
+    expect(convertRaceTimeToMinutes(capabilities.halfMarathon)).toBeLessThan(
+      convertRaceTimeToMinutes(readinessPrediction.halfMarathon)
+    );
+    expect(capabilities.fiveK).toBe("22:30");
+  });
+
+  it("preserves a proven same-distance race result in current capability", () => {
+    const halfRaceTime = "1:28:09";
+    const capabilities = calculateCurrentRaceCapabilities(
+      [
+        {
+          date: "2026-03-15",
+          type: "Half Marathon Race",
+          distanceMiles: 13.27,
+          pace: "6:39 /mi",
+          effort: "Hard",
+          elapsedTimeSeconds: 88 * 60 + 9,
+          isRace: true,
+          raceDistance: "Half Marathon",
+        },
+      ],
+      "10K",
+      "42:41"
+    );
+
+    expect(capabilities.halfMarathon).toBe(halfRaceTime);
   });
 
   it("calculates acute load, chronic load, form, and status", () => {
