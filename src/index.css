@@ -118,23 +118,6 @@ h3 {
   line-height: 1.5;
 }
 
-.topBarPills {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.topBarPills span {
-  border: 1px solid #cbd5e1;
-  border-radius: 999px;
-  background: #f8fafc;
-  padding: 10px 14px;
-  color: #475569;
-  font-size: 14px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
 .topBarActions {
   display: grid;
   justify-items: end;
@@ -825,6 +808,85 @@ h3 {
   font-size: 14px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.loadHeaderActions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loadHelp {
+  position: relative;
+}
+
+.loadHelp summary {
+  width: 38px;
+  height: 38px;
+  border: 1px solid #99d7ca;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: white;
+  color: #0f766e;
+  cursor: help;
+  font-size: 17px;
+  font-weight: 900;
+  list-style: none;
+}
+
+.loadHelp summary::-webkit-details-marker {
+  display: none;
+}
+
+.loadHelp summary:hover,
+.loadHelp summary:focus-visible {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  outline: none;
+}
+
+.loadHelpPopup {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(360px, calc(100vw - 48px));
+  border: 1px solid #a7d7cb;
+  border-radius: 8px;
+  padding: 16px;
+  background: white;
+  box-shadow: 0 14px 35px rgba(15, 23, 42, 0.16);
+  color: #334155;
+}
+
+.loadHelp:not([open]) .loadHelpPopup {
+  display: none;
+}
+
+.loadHelp:hover .loadHelpPopup,
+.loadHelp:focus-within .loadHelpPopup {
+  display: block;
+}
+
+.loadHelpPopup strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #111827;
+}
+
+.loadHelpPopup p {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.loadHelpPopup small {
+  display: block;
+  margin-top: 10px;
+  color: #64748b;
+  line-height: 1.4;
 }
 
 .loadStatusBuilding,

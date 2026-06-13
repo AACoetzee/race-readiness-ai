@@ -2095,11 +2095,6 @@ const planIntakeModal = isPlanIntakeOpen ? (
   </div>
 
   <div className="topBarActions">
-    <div className="topBarPills">
-      <span>Formula-based predictions</span>
-      <span>AI coaching summary</span>
-    </div>
-
     <div className="buttonRow">
       <button className="secondaryButton" onClick={handleImportDataClick}>
         Import Data
@@ -2238,9 +2233,26 @@ const planIntakeModal = isPlanIntakeOpen ? (
             </p>
           </div>
 
-          <span className={`loadStatus loadStatus${trainingLoadMetrics.status}`}>
-            {trainingLoadMetrics.status}
-          </span>
+          <div className="loadHeaderActions">
+            <span className={`loadStatus loadStatus${trainingLoadMetrics.status}`}>
+              {trainingLoadMetrics.status}
+            </span>
+
+            <details className="loadHelp">
+              <summary aria-label="How training load is calculated" title="How training load is calculated">
+                ?
+              </summary>
+              <div className="loadHelpPopup">
+                <strong>How this is calculated</strong>
+                <p><b>Run load</b> = miles × effort multiplier × heart-rate multiplier.</p>
+                <p><b>Fatigue</b> = total run load from the latest 7 days.</p>
+                <p><b>Fitness</b> = average weekly run load across 6 weeks.</p>
+                <p><b>Form</b> = fitness − fatigue.</p>
+                <p><b>Ramp</b> = percentage difference between fatigue and fitness.</p>
+                <small>Load points are relative to your own training, not out of 100.</small>
+              </div>
+            </details>
+          </div>
         </div>
 
         <div className="loadMetricGrid">
