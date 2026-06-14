@@ -472,10 +472,10 @@ export function calculateFitnessBreakdown(runs: Run[]) {
   const numberOfRuns = calculateNumberOfRuns(runs);
 
   return {
-    mileage: totalMiles >= 55 ? "Strong" : totalMiles >= 25 ? "Moderate" : "Needs work",
-    longRun: longestRun >= 15 ? "Strong" : longestRun >= 10 ? "Moderate" : "Needs work",
+    mileage: totalMiles >= 30 ? "Strong" : totalMiles >= 20 ? "Moderate" : "Needs work",
+    longRun: longestRun >= 12 ? "Strong" : longestRun >= 8 ? "Moderate" : "Needs work",
     consistency:
-      numberOfRuns >= 6 ? "Strong" : numberOfRuns >= 3 ? "Moderate" : "Needs work",
+      numberOfRuns >= 5 ? "Strong" : numberOfRuns >= 4 ? "Moderate" : "Needs work",
   };
 
   

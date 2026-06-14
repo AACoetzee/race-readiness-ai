@@ -3,13 +3,13 @@ type AICoachSummaryInput = {
   longestRun: number;
   numberOfRuns: number;
   fitnessScore: number;
-  trainingLoad: string;
   trainingStatus: string;
   trendAverageWeeklyMiles: number;
   trendLongestRun: number;
   trendAverageWeeklyRuns: number;
   goalRace: string;
   selectedGoalTime: string;
+  distanceUnit: "mi" | "km";
 };
 
 export function generateAICoachSummary({
@@ -17,32 +17,38 @@ export function generateAICoachSummary({
   longestRun,
   numberOfRuns,
   fitnessScore,
-  trainingLoad,
   trainingStatus,
   trendAverageWeeklyMiles,
   trendLongestRun,
   trendAverageWeeklyRuns,
   goalRace,
   selectedGoalTime,
+  distanceUnit,
 }: AICoachSummaryInput) {
   // This is a fast local summary, not an OpenAI call. It gives the dashboard a
   // useful answer immediately and acts as a fallback when the backend is offline.
   const strengths: string[] = [];
   const risks: string[] = [];
   const suggestions: string[] = [];
+  const distanceMultiplier = distanceUnit === "km" ? 1.609344 : 1;
+  const distanceLabel = distanceUnit === "km" ? "km" : "mi";
+  const formatDistance = (miles: number) =>
+    `${(miles * distanceMultiplier).toFixed(1)} ${distanceLabel}`;
 
   // Use the longer trend for strengths so one unusual week does not erase them.
   if (trendAverageWeeklyMiles >= 30) {
-    strengths.push(`Your 90-day mileage base is strong at ${trendAverageWeeklyMiles.toFixed(1)} mi/wk.`);
+    strengths.push(`Your 90-day distance base is strong at ${formatDistance(trendAverageWeeklyMiles)}/wk.`);
   } else if (trendAverageWeeklyMiles >= 20) {
-    strengths.push(`You have a solid 90-day mileage base of ${trendAverageWeeklyMiles.toFixed(1)} mi/wk.`);
+    strengths.push(`You have a solid 90-day distance base of ${formatDistance(trendAverageWeeklyMiles)}/wk.`);
   } else {
-    risks.push("Your 90-day weekly mileage base is still fairly low.");
-    suggestions.push("Build mileage slowly before targeting longer races.");
+    risks.push("Your 90-day weekly distance base is still fairly low.");
+    suggestions.push("Build weekly distance slowly before targeting longer races.");
   }
 
   if (trendLongestRun >= 13) {
-    strengths.push(`Your ${trendLongestRun.toFixed(1)}-mile long run shows good endurance.`);
+    strengths.push(
+      `Your history includes a ${formatDistance(trendLongestRun)} non-race activity, which shows substantial endurance.`
+    );
   } else if (trendLongestRun >= 9) {
     strengths.push("Your recent long-run history gives you a useful endurance base.");
   } else {
@@ -50,8 +56,12 @@ export function generateAICoachSummary({
     suggestions.push("Increase your long run gradually over time.");
   }
 
-  if (trendAverageWeeklyRuns >= 4) {
-    strengths.push(`You are consistently averaging ${trendAverageWeeklyRuns.toFixed(1)} runs per week.`);
+  if (trendAverageWeeklyRuns >= 4 || numberOfRuns >= 4) {
+    strengths.push(
+      trendAverageWeeklyRuns >= 4
+        ? `You are consistently averaging ${trendAverageWeeklyRuns.toFixed(1)} runs per week.`
+        : `You completed ${numberOfRuns} runs in the latest week, which is a useful training frequency.`
+    );
   } else {
     risks.push("Your running frequency is a little low.");
     suggestions.push("Try to build toward 4 runs per week.");
@@ -73,18 +83,18 @@ export function generateAICoachSummary({
   }
 
   if (goalRace === "Half Marathon" || goalRace === "Marathon") {
-    suggestions.push("Focus on endurance, steady mileage, and long runs.");
+    suggestions.push("Focus on endurance, steady weekly distance, and long runs.");
   }
 
   return {
     headline:
-      fitnessScore >= 85
+      fitnessScore >= 85 || (trendAverageWeeklyMiles >= 25 && trainingStatus !== "Low")
         ? "You look fit and consistent right now."
         : fitnessScore >= 70
         ? "You have a good base, but there is room to improve."
         : "You are still building your running base.",
 
-    summary: `Based on ${totalMiles} miles in your most recent 7-day training window, ${numberOfRuns} runs, and a longest run of ${longestRun} miles, your current training load looks ${trainingLoad.toLowerCase()}. Your estimated ${goalRace} time is ${selectedGoalTime}.`,
+    summary: `Your most recent 7-day window contains ${formatDistance(totalMiles)} across ${numberOfRuns} runs, with a ${formatDistance(longestRun)} longest run. Compared with your longer-term training, your current status is ${trainingStatus.toLowerCase()}. Your current ${goalRace} capability estimate is ${selectedGoalTime}.`,
 
     strengths,
     risks,

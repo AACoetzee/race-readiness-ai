@@ -2177,3 +2177,606 @@ h3 {
     justify-content: flex-start;
   }
 }
+
+/* CHATGPT-INSPIRED VISUAL SYSTEM
+ *
+ * The dashboard stays an operational training tool, but uses the reference
+ * site's quiet black-and-white typography, compact pill actions, generous
+ * spacing, and flat neutral surfaces.
+ */
+
+:root {
+  color: #0d0d0d;
+  background: #ffffff;
+  font-synthesis: none;
+}
+
+body {
+  background: #ffffff;
+  color: #0d0d0d;
+  font-family:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.app {
+  max-width: 1440px;
+  padding: 20px 28px 64px;
+}
+
+h1,
+h2,
+h3 {
+  color: #0d0d0d;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+h1 {
+  font-size: 46px;
+  line-height: 1;
+}
+
+h2 {
+  font-size: 25px;
+}
+
+.eyebrow {
+  margin-bottom: 10px;
+  color: #737373;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.bodyText,
+.mutedText,
+.sectionHeader p,
+.topBarSubtitle {
+  color: #666666;
+}
+
+.topBar {
+  border: 0;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 0;
+  margin-bottom: 18px;
+  padding: 22px 0 26px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.topBar h1 {
+  font-size: 48px;
+  font-weight: 500;
+}
+
+.topBarSubtitle {
+  max-width: 620px;
+  margin-top: 12px;
+  font-size: 16px;
+}
+
+.topBarActions {
+  gap: 10px;
+}
+
+.unitToggle {
+  border: 1px solid #dedede;
+  border-radius: 999px;
+  padding: 3px;
+  display: flex;
+  gap: 2px;
+  background: #f4f4f4;
+}
+
+.unitToggle button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: transparent;
+  color: #666666;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.unitToggle button.activeUnit {
+  background: #ffffff;
+  color: #0d0d0d;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.primaryButton,
+.secondaryButton,
+.planButton,
+.smallButton,
+.fullButton,
+.aiButton,
+.calendarTodayButton,
+.calendarArrowButton,
+.lockButton {
+  min-height: 38px;
+  border: 1px solid #d9d9d9;
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.primaryButton,
+.planButton,
+.fullButton,
+.aiButton {
+  border-color: #0d0d0d;
+  background: #0d0d0d;
+  color: #ffffff;
+}
+
+.primaryButton:hover,
+.planButton:hover,
+.fullButton:hover,
+.aiButton:hover {
+  border-color: #2f2f2f;
+  background: #2f2f2f;
+}
+
+.secondaryButton,
+.smallButton,
+.calendarTodayButton,
+.calendarArrowButton,
+.lockButton {
+  background: #ffffff;
+  color: #0d0d0d;
+}
+
+.secondaryButton:hover,
+.smallButton:hover,
+.calendarTodayButton:hover,
+.calendarArrowButton:hover,
+.lockButton:hover {
+  border-color: #b8b8b8;
+  background: #f7f7f7;
+}
+
+.actionStatus {
+  border: 0;
+  border-radius: 8px;
+  margin: 0 0 18px;
+  padding: 11px 14px;
+  background: #f4f4f4;
+  box-shadow: none;
+  color: #4d4d4d;
+  font-weight: 500;
+}
+
+.dashboardTabs {
+  border: 0;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 0;
+  margin-bottom: 38px;
+  padding: 0;
+  gap: 28px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.dashboardTabs button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 13px 0 12px;
+  color: #737373;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dashboardTabs button:hover,
+.dashboardTabs button.activeDashboardTab {
+  border-color: #0d0d0d;
+  background: transparent;
+  color: #0d0d0d;
+}
+
+.card,
+.heroCard,
+.statCard,
+.planHero,
+.activityHero {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.card {
+  padding: 26px;
+}
+
+.dashboardGrid {
+  grid-template-columns: minmax(0, 1.15fr) minmax(470px, 0.85fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.heroCard {
+  min-height: 260px;
+  border-color: #dedede;
+  padding: 34px;
+  background: #f7f7f5;
+}
+
+.heroCard::before {
+  display: none;
+}
+
+.heroCard h2 {
+  max-width: 560px;
+  margin-bottom: 18px;
+  font-size: 42px;
+  font-weight: 500;
+  line-height: 1.06;
+}
+
+.scoreBox {
+  border: 1px solid #d8d8d8;
+  border-radius: 8px;
+  padding: 22px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.scoreBox p,
+.scoreBox span {
+  color: #737373;
+}
+
+.scoreBox strong {
+  color: #0d0d0d;
+  font-size: 58px;
+  font-weight: 500;
+}
+
+.statsGrid {
+  gap: 10px;
+}
+
+.statCard {
+  min-height: 125px;
+  border-color: #e6e6e6;
+  padding: 20px;
+  background: #ffffff;
+}
+
+.statCard:nth-child(4) {
+  border-color: #d9e5df;
+  background: #f1f7f4;
+}
+
+.statCard:nth-child(5) {
+  border-color: #eadfc8;
+  background: #faf6ed;
+}
+
+.statCard p {
+  color: #737373;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.statCard strong {
+  color: #0d0d0d;
+  font-size: clamp(25px, 2vw, 32px);
+  font-weight: 500;
+}
+
+.capabilityPanel,
+.loadPanel,
+.activityAiCard {
+  border-color: #e6e6e6;
+  margin-bottom: 18px;
+  background: #ffffff;
+}
+
+.capabilityGrid {
+  gap: 8px;
+}
+
+.capabilityGrid div,
+.loadMetricGrid > div,
+.breakdownBox,
+.insightBox,
+.activityMetricList div,
+.activityTagGrid div,
+.activityAiGrid > div,
+.heartRateSettings > div,
+.heartRateSettings label,
+.zoneBox,
+.compactZoneGrid div,
+.planGoalGrid div,
+.planWeekStats div,
+.planMethodGrid div {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  background: #f7f7f7;
+}
+
+.capabilityGrid span,
+.activityAiGrid span,
+.compactZoneGrid span,
+.zoneBox span {
+  color: #666666;
+}
+
+.capabilityGrid strong,
+.loadMetricGrid strong {
+  font-weight: 500;
+}
+
+.sectionHeader {
+  margin-bottom: 22px;
+}
+
+.sectionHeader h2 {
+  margin-bottom: 7px;
+}
+
+.loadStatus {
+  border: 1px solid #d8d8d8;
+  background: #f7f7f7;
+  color: #333333;
+}
+
+.loadExplanation {
+  border-radius: 8px;
+}
+
+.analyticsGrid,
+.contentGrid,
+.summaryGrid {
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.runList {
+  gap: 0;
+}
+
+.runBox {
+  border: 0;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 0;
+  padding: 17px 4px;
+  background: #ffffff;
+}
+
+.runBox:first-child {
+  border-top: 1px solid #e8e8e8;
+}
+
+.runBox:hover {
+  border-color: #d8d8d8;
+  background: #f7f7f7;
+  transform: none;
+}
+
+.pill {
+  border-color: #dedede;
+  background: #f7f7f7;
+  color: #555555;
+}
+
+.racePill {
+  border-color: #e5c9c6;
+  background: #faf1f0;
+  color: #8f352e;
+}
+
+.chartBarFitness {
+  background: #0d0d0d;
+}
+
+.chartBarFatigue {
+  background: #ea8358;
+}
+
+.formPointFresh,
+.legendFormFresh {
+  background: #3d8f74;
+}
+
+.formPointFatigued,
+.legendFormFatigued {
+  background: #db6656;
+}
+
+.modalBackdrop {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+
+.planIntakeModal {
+  border-color: #e3e3e3;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.16);
+}
+
+.planIntakeGrid select,
+.planIntakeGrid textarea,
+.planRaceGrid select,
+.planRaceGrid input,
+.planWeekStats input,
+.planWeekField textarea,
+.heartRateSettings input {
+  border-color: #d9d9d9;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.planRaceGrid,
+.planIntakeSummary,
+.planDetectedRace {
+  border-color: #e3e3e3;
+  border-radius: 8px;
+  background: #f7f7f7;
+}
+
+.planIntakeSummary p,
+.planDetectedRace span {
+  color: #555555;
+}
+
+.planHero {
+  border-color: #e6e6e6;
+  background: #f7f7f5;
+}
+
+.planWeek {
+  border-color: #e6e6e6;
+  border-radius: 8px;
+}
+
+.planDailySchedule span,
+.planMethodGrid strong {
+  color: #555555;
+}
+
+.calendarDay {
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.calendarDayDetails {
+  width: 100%;
+  min-width: 0;
+}
+
+.calendarDay strong,
+.calendarDay em {
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.calendarDayHasRun {
+  border-color: #cee0d8;
+  background: #f1f7f4;
+}
+
+.calendarDayHasPlan {
+  border-color: #d7dfea;
+  background: #f2f5f9;
+}
+
+.calendarDayHasRun.calendarDayHasPlan {
+  background: #eef4f3;
+}
+
+@media (max-width: 1000px) {
+  .dashboardGrid,
+  .analyticsGrid,
+  .summaryGrid,
+  .contentGrid,
+  .zonesLayout,
+  .planHero {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .app {
+    padding: 12px 18px 48px;
+  }
+
+  .topBar {
+    padding: 22px 0 24px;
+  }
+
+  .topBar h1 {
+    font-size: 40px;
+  }
+
+  .topBarActions,
+  .topBarActions .buttonRow {
+    width: 100%;
+  }
+
+  .unitToggle {
+    width: fit-content;
+  }
+
+  .topBarActions .buttonRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topBarActions button {
+    width: 100%;
+  }
+
+  .dashboardTabs {
+    gap: 24px;
+    margin-bottom: 26px;
+  }
+
+  .heroCard {
+    min-height: auto;
+    padding: 26px;
+  }
+
+  .heroCard h2 {
+    font-size: 34px;
+  }
+
+  .card {
+    padding: 20px;
+  }
+
+  .calendarDay {
+    min-height: 76px;
+    padding: 8px;
+  }
+
+  .calendarDay strong,
+  .calendarDay em {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 600px) {
+  .topBarActions .buttonRow {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .primaryButton,
+  .secondaryButton,
+  .planButton,
+  .smallButton,
+  .fullButton,
+  .aiButton {
+    padding-inline: 11px;
+    font-size: 12px;
+  }
+
+  .statsGrid {
+    gap: 8px;
+  }
+
+  .statCard {
+    min-height: 105px;
+    padding: 16px;
+  }
+
+  .statCard p {
+    white-space: normal;
+  }
+
+  .statCard strong {
+    font-size: 24px;
+    white-space: normal;
+  }
+}

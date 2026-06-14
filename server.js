@@ -425,6 +425,91 @@ function constrainAdjustedGoalTime(summary, context) {
   };
 }
 
+function normalizeAiSummary(summary, context) {
+  const strengths = [...summary.strengths];
+  const risks = [...summary.risks];
+  const suggestions = [...summary.suggestions];
+  const goalLongRunThreshold = {
+    "5K": 5,
+    "10K": 7,
+    "Half Marathon": 12,
+    Marathon: 18,
+  }[context.goalRace];
+  const distanceMultiplier = context.displayUnit === "km" ? 1.609344 : 1;
+  const distanceLabel = context.displayUnit === "km" ? "km" : "mi";
+  const formatDistance = (miles) =>
+    `${(miles * distanceMultiplier).toFixed(1)} ${distanceLabel}`;
+  const formatSummaryUnits = (text) => {
+    if (context.displayUnit !== "km") {
+      return text;
+    }
+
+    return text
+      .replace(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/gi, (_, miles) =>
+        `${(Number(miles) * 1.609344).toFixed(1)} km`
+      )
+      .replace(/(\d+(?:\.\d+)?)-mile\b/gi, (_, miles) =>
+        `${(Number(miles) * 1.609344).toFixed(1)}-km`
+      );
+  };
+
+  if (context.trendAverageWeeklyRuns >= 4 || context.numberOfRuns >= 4) {
+    const frequencyPattern = /\b(frequency|runs? per week|run more often|more runs)\b/i;
+
+    risks.splice(0, risks.length, ...risks.filter((item) => !frequencyPattern.test(item)));
+    suggestions.splice(
+      0,
+      suggestions.length,
+      ...suggestions.filter((item) => !frequencyPattern.test(item))
+    );
+    strengths.push(
+      context.trendAverageWeeklyRuns >= 4
+        ? `You are averaging ${context.trendAverageWeeklyRuns.toFixed(1)} runs per week across the ${context.trendWindowDays}-day trend.`
+        : `You completed ${context.numberOfRuns} runs in the latest 7-day window.`
+    );
+  }
+
+  if (context.trendLongestRun >= goalLongRunThreshold) {
+    const needsLongerRunPattern =
+      /\b(increase|build|extend|progress|need|short).{0,35}\b(long run|race distance|distance)\b|\b(long run|distance).{0,35}\b(increase|build|extend|progress|need|short)\b/i;
+
+    risks.splice(
+      0,
+      risks.length,
+      ...risks.filter((item) => !needsLongerRunPattern.test(item))
+    );
+    suggestions.splice(
+      0,
+      suggestions.length,
+      ...suggestions.filter((item) => !needsLongerRunPattern.test(item))
+    );
+    strengths.push(
+      `Your non-race history includes a ${formatDistance(context.trendLongestRun)} activity, so basic endurance distance is already demonstrated.`
+    );
+  }
+
+  if (context.trainingStatus !== "Low") {
+    const lowLoadPattern = /\b(training load|fitness base).{0,20}\blow\b|\blow\b.{0,20}\b(training load|fitness base)\b/i;
+
+    risks.splice(0, risks.length, ...risks.filter((item) => !lowLoadPattern.test(item)));
+  }
+
+  if (risks.length > 1) {
+    const noRiskPattern = /\bno (major|clear) risks?\b/i;
+
+    risks.splice(0, risks.length, ...risks.filter((item) => !noRiskPattern.test(item)));
+  }
+
+  return {
+    ...summary,
+    summary: `Your latest 7-day window contains ${formatDistance(context.totalMiles)} across ${context.numberOfRuns} runs. Compared with your longer-term training, your current status is ${context.trainingStatus.toLowerCase()}. Your current ${context.goalRace} capability estimate is ${context.selectedGoalTime}.`,
+    headline: formatSummaryUnits(summary.headline),
+    strengths: [...new Set(strengths)].slice(0, 5).map(formatSummaryUnits),
+    risks: [...new Set(risks)].slice(0, 5).map(formatSummaryUnits),
+    suggestions: [...new Set(suggestions)].slice(0, 5).map(formatSummaryUnits),
+  };
+}
+
 async function getStravaAccessToken() {
   const response = await fetch(STRAVA_TOKEN_URL, {
     method: "POST",
@@ -525,6 +610,13 @@ function validateAiSummaryRequest(body) {
   const errors = [];
   const validGoalRaces = ["5K", "10K", "Half Marathon", "Marathon"];
   const validTrainingLoads = ["Low", "Moderate", "High"];
+  const validTrainingStatuses = [
+    "Building",
+    "Maintaining",
+    "Fresh",
+    "Overreaching",
+    "Low",
+  ];
 
   if (!isFiniteNumber(body.totalMiles) || body.totalMiles < 0) {
     errors.push("totalMiles must be a non-negative number.");
@@ -579,6 +671,21 @@ function validateAiSummaryRequest(body) {
 
   if (!validTrainingLoads.includes(body.trainingLoad)) {
     errors.push("trainingLoad must be Low, Moderate, or High.");
+  }
+
+  if (!validTrainingStatuses.includes(body.trainingStatus)) {
+    errors.push("trainingStatus is invalid.");
+  }
+
+  if (!["mi", "km"].includes(body.displayUnit)) {
+    errors.push("displayUnit must be mi or km.");
+  }
+
+  if (
+    !isFiniteNumber(body.trendAverageWeeklyRuns) ||
+    body.trendAverageWeeklyRuns < 0
+  ) {
+    errors.push("trendAverageWeeklyRuns must be a non-negative number.");
   }
 
   if (!validGoalRaces.includes(body.goalRace)) {
@@ -1152,11 +1259,14 @@ app.post("/api/ai-summary", async (req, res) => {
     numberOfRuns,
     fitnessScore,
     trainingLoad,
+    trainingStatus,
+    displayUnit,
     trendWindowDays,
     trendTotalMiles,
     trendLongestRun,
     trendNumberOfRuns,
     trendAverageWeeklyMiles,
+    trendAverageWeeklyRuns,
     goalRace,
     selectedGoalTime,
     pastRaceDistance,
@@ -1169,6 +1279,10 @@ app.post("/api/ai-summary", async (req, res) => {
     goalRaceDate,
     weeksUntilGoalRace,
   } = req.body;
+  const displayDistanceMultiplier = displayUnit === "km" ? 1.609344 : 1;
+  const displayDistanceLabel = displayUnit === "km" ? "km" : "mi";
+  const displayDistance = (miles) =>
+    `${(miles * displayDistanceMultiplier).toFixed(1)} ${displayDistanceLabel}`;
 
   const runnerData = {
     totalMiles,
@@ -1176,11 +1290,14 @@ app.post("/api/ai-summary", async (req, res) => {
     numberOfRuns,
     fitnessScore,
     trainingLoad,
+    trainingStatus,
+    displayUnit,
     trendWindowDays,
     trendTotalMiles,
     trendLongestRun,
     trendNumberOfRuns,
     trendAverageWeeklyMiles,
+    trendAverageWeeklyRuns,
     goalRace,
     selectedGoalTime,
     pastRaceDistance,
@@ -1192,6 +1309,12 @@ app.post("/api/ai-summary", async (req, res) => {
     weeksSincePastRace,
     goalRaceDate,
     weeksUntilGoalRace,
+    displayMetrics: {
+      latestSevenDayDistance: displayDistance(totalMiles),
+      latestSevenDayLongestRun: displayDistance(longestRun),
+      trendWeeklyDistance: `${displayDistance(trendAverageWeeklyMiles)}/wk`,
+      trendLongestNonRaceRun: displayDistance(trendLongestRun),
+    },
   };
 
   try {
@@ -1216,6 +1339,11 @@ Prediction rules:
 - The formula estimate is anchored to the race-tagged result and should be treated as the baseline.
 - Use the ${trendWindowDays}-day trend data to judge confidence and realism.
 - Do not judge race readiness from only the most recent 7 days.
+- The relative current training status is ${trainingStatus}. Use it instead of describing load from an absolute mileage threshold.
+- Write all user-facing distances using ${displayUnit === "km" ? "kilometers" : "miles"}. The supplied numeric training fields remain internally measured in miles.
+- Use displayMetrics exactly when mentioning distances. Do not relabel a raw mile value as kilometers.
+- The runner averages ${trendAverageWeeklyRuns.toFixed(1)} runs per week and completed ${numberOfRuns} runs in the latest week. Do not call frequency low or suggest fewer runs when either value is already 4 or more.
+- trendLongestRun excludes race-tagged activities. Treat it as the normal training long-run signal.
 - If the race tag is recent, the goal race is many weeks away, and the ${trendWindowDays}-day average weekly mileage is solid, do not make the adjusted goal time much slower than the formula estimate.
 - If you do slow the goal time, explain the specific trend reason.
 
@@ -1246,7 +1374,10 @@ Do not overpromise race results.
       throw new Error("AI response did not match the expected summary shape.");
     }
 
-    const constrainedSummary = constrainAdjustedGoalTime(parsed, runnerData);
+    const constrainedSummary = normalizeAiSummary(
+      constrainAdjustedGoalTime(parsed, runnerData),
+      runnerData
+    );
 
     res.json({
       ...constrainedSummary,

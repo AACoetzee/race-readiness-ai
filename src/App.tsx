@@ -55,11 +55,14 @@ const SAVED_RUNS_KEY = "race-readiness-runs";
 const SAVED_TRAINING_PLAN_KEY = "race-readiness-training-plan";
 const SAVED_PLAN_PREFERENCES_KEY = "race-readiness-plan-preferences";
 const SAVED_MAX_HEART_RATE_KEY = "race-readiness-max-heart-rate";
+const SAVED_DISTANCE_UNIT_KEY = "race-readiness-distance-unit";
+const KILOMETERS_PER_MILE = 1.609344;
 
 // A union type is a short list of the only allowed string values.
 // TypeScript will warn us if we accidentally use an unknown page name.
 type PageView = "dashboard" | "trainingPlan" | "activityDetail";
 type DashboardView = "overview" | "calendar" | "activities" | "zones" | "coach";
+type DistanceUnit = "mi" | "km";
 
 function getStorage() {
   // localStorage belongs to the browser. The try/catch prevents the whole app
@@ -261,7 +264,7 @@ function createHeartRateZones(maxHeartRate: number | null): HeartRateZone[] {
       name: "Z2",
       label: "Easy aerobic",
       range: formatHeartRateRange(maxHeartRate, 0.6, 0.7),
-      description: "Most normal mileage",
+      description: "Most normal running",
     },
     {
       name: "Z3",
@@ -300,12 +303,14 @@ function getRaceDistanceMiles(raceDistance: string) {
   return 26.2;
 }
 
-function formatPaceFromMinutes(minutesPerMile: number) {
-  const totalSeconds = Math.max(0, Math.round(minutesPerMile * 60));
+function formatPaceFromMinutes(minutesPerMile: number, distanceUnit: DistanceUnit) {
+  const minutesPerUnit =
+    distanceUnit === "km" ? minutesPerMile / KILOMETERS_PER_MILE : minutesPerMile;
+  const totalSeconds = Math.max(0, Math.round(minutesPerUnit * 60));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
 
-  return `${minutes}:${String(seconds).padStart(2, "0")} /mi`;
+  return `${minutes}:${String(seconds).padStart(2, "0")} /${distanceUnit}`;
 }
 
 function getGoalPaceMinutes(goalRace: string, selectedGoalTime: string) {
@@ -318,7 +323,11 @@ function getGoalPaceMinutes(goalRace: string, selectedGoalTime: string) {
   return goalTimeMinutes / getRaceDistanceMiles(goalRace);
 }
 
-function createPaceZones(goalRace: string, selectedGoalTime: string): PaceZone[] {
+function createPaceZones(
+  goalRace: string,
+  selectedGoalTime: string,
+  distanceUnit: DistanceUnit
+): PaceZone[] {
   const goalPace = getGoalPaceMinutes(goalRace, selectedGoalTime);
 
   if (!goalPace) {
@@ -336,31 +345,31 @@ function createPaceZones(goalRace: string, selectedGoalTime: string): PaceZone[]
     {
       name: "Easy",
       label: "Aerobic",
-      range: `${formatPaceFromMinutes(goalPace + 1.5)}-${formatPaceFromMinutes(goalPace + 2.5)}`,
-      description: "Most normal mileage and recovery days",
+      range: `${formatPaceFromMinutes(goalPace + 1.5, distanceUnit)}-${formatPaceFromMinutes(goalPace + 2.5, distanceUnit)}`,
+      description: "Most normal running and recovery days",
     },
     {
       name: "Steady",
       label: "Controlled",
-      range: `${formatPaceFromMinutes(goalPace + 0.75)}-${formatPaceFromMinutes(goalPace + 1.5)}`,
+      range: `${formatPaceFromMinutes(goalPace + 0.75, distanceUnit)}-${formatPaceFromMinutes(goalPace + 1.5, distanceUnit)}`,
       description: "Comfortably moderate running",
     },
     {
       name: "Tempo",
       label: "Threshold",
-      range: `${formatPaceFromMinutes(goalPace + 0.2)}-${formatPaceFromMinutes(goalPace + 0.6)}`,
+      range: `${formatPaceFromMinutes(goalPace + 0.2, distanceUnit)}-${formatPaceFromMinutes(goalPace + 0.6, distanceUnit)}`,
       description: "Sustained workout efforts",
     },
     {
       name: "Race",
       label: goalRace,
-      range: `${formatPaceFromMinutes(goalPace - 0.1)}-${formatPaceFromMinutes(goalPace + 0.1)}`,
+      range: `${formatPaceFromMinutes(goalPace - 0.1, distanceUnit)}-${formatPaceFromMinutes(goalPace + 0.1, distanceUnit)}`,
       description: "Current estimated goal-race pace",
     },
     {
       name: "Fast",
       label: "Speed",
-      range: `${formatPaceFromMinutes(goalPace - 0.75)}-${formatPaceFromMinutes(goalPace - 0.25)}`,
+      range: `${formatPaceFromMinutes(goalPace - 0.75, distanceUnit)}-${formatPaceFromMinutes(goalPace - 0.25, distanceUnit)}`,
       description: "Short intervals and strides",
     },
   ];
@@ -678,16 +687,8 @@ function formatOptionalElapsedTime(totalSeconds?: number) {
   return totalSeconds ? formatElapsedTime(totalSeconds) : "Not available";
 }
 
-function formatMiles(miles: number) {
-  return Number(miles.toFixed(2)).toString();
-}
-
 function formatOptionalHeartRate(heartRate?: number) {
   return heartRate ? `${Math.round(heartRate)} bpm` : "No HR data";
-}
-
-function formatOptionalFeet(feet?: number) {
-  return typeof feet === "number" ? `${Math.round(feet)} ft` : "Not available";
 }
 
 function formatOptionalCadence(cadence?: number) {
@@ -734,6 +735,9 @@ const [runs, setRuns] = useState<Run[]>(() => {
   }
 });
 const [showAllRuns, setShowAllRuns] = useState(false);
+const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() =>
+  getStorage()?.getItem(SAVED_DISTANCE_UNIT_KEY) === "km" ? "km" : "mi"
+);
 const [actionMessage, setActionMessage] = useState("");
 const [isImportingStrava, setIsImportingStrava] = useState(false);
 const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
@@ -923,7 +927,54 @@ const selectedGoalTime = currentRaceCapabilities
     ? currentRaceCapabilities.halfMarathon
     : currentRaceCapabilities.marathon
   : "Enter a valid time";
-const paceZones = createPaceZones(goalRace, selectedGoalTime);
+const paceZones = createPaceZones(goalRace, selectedGoalTime, distanceUnit);
+const distanceMultiplier = distanceUnit === "km" ? KILOMETERS_PER_MILE : 1;
+const formatDistanceValue = (miles: number) =>
+  Number((miles * distanceMultiplier).toFixed(2)).toString();
+const formatDistance = (miles: number) =>
+  `${formatDistanceValue(miles)} ${distanceUnit}`;
+const formatWeeklyDistance = (miles: number) =>
+  `${formatDistanceValue(miles)} ${distanceUnit}/wk`;
+const convertDisplayedDistanceToMiles = (distance: number) =>
+  distanceUnit === "km" ? distance / KILOMETERS_PER_MILE : distance;
+const formatRunPace = (pace: string) => {
+  if (distanceUnit === "mi" || !pace.includes("/mi")) {
+    return pace;
+  }
+
+  const match = pace.match(/(\d+):(\d{2})\s*\/mi/);
+
+  if (!match) {
+    return pace;
+  }
+
+  const minutesPerMile = Number(match[1]) + Number(match[2]) / 60;
+
+  return pace.replace(match[0], formatPaceFromMinutes(minutesPerMile, "km"));
+};
+const formatElevation = (feet?: number) => {
+  if (typeof feet !== "number") {
+    return "Not available";
+  }
+
+  return distanceUnit === "km"
+    ? `${Math.round(feet * 0.3048)} m`
+    : `${Math.round(feet)} ft`;
+};
+const unitToggle = (
+  <div className="unitToggle" aria-label="Distance unit">
+    {(["mi", "km"] as DistanceUnit[]).map((unit) => (
+      <button
+        className={distanceUnit === unit ? "activeUnit" : ""}
+        key={unit}
+        type="button"
+        onClick={() => setDistanceUnit(unit)}
+      >
+        {unit === "mi" ? "Miles" : "Kilometers"}
+      </button>
+    ))}
+  </div>
+);
 
   const [aiSummary, setAiSummary] = useState<null | {
   headline: string;
@@ -942,6 +993,11 @@ const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
 const [activityInsights, setActivityInsights] = useState<Record<string, ActivityInsight>>({});
 const [isLoadingActivityInsight, setIsLoadingActivityInsight] = useState(false);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
+
+useEffect(() => {
+  getStorage()?.setItem(SAVED_DISTANCE_UNIT_KEY, distanceUnit);
+  setAiSummary(null);
+}, [distanceUnit]);
 
 useEffect(() => {
   // Imported runs drive every fitness and plan calculation, so they must
@@ -1329,11 +1385,14 @@ async function handleRefreshAISummary() {
         numberOfRuns,
         fitnessScore,
         trainingLoad,
+        trainingStatus: trainingLoadMetrics.status,
+        displayUnit: distanceUnit,
         trendWindowDays: TREND_WINDOW_DAYS,
         trendTotalMiles: calculateTotalMiles(trendRuns),
-        trendLongestRun,
+        trendLongestRun: planTrendLongestRun,
         trendNumberOfRuns,
         trendAverageWeeklyMiles,
+        trendAverageWeeklyRuns,
         goalRace,
         selectedGoalTime,
         pastRaceDistance: effectivePastRaceDistance,
@@ -1652,10 +1711,10 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
       <div className="planIntakeSummary">
         <p>
-          Strava base: {formatMiles(trendAverageWeeklyMiles)} mi/wk over 90
-          days and {formatMiles(recentAverageWeeklyMiles)} mi/wk over the latest
-          6 weeks. Plan baseline: {formatMiles(planBaselineWeeklyMiles)} mi/wk,
-          longest non-race run {formatMiles(planTrendLongestRun)} mi,{" "}
+          Strava base: {formatWeeklyDistance(trendAverageWeeklyMiles)} over 90
+          days and {formatWeeklyDistance(recentAverageWeeklyMiles)} over the latest
+          6 weeks. Plan baseline: {formatWeeklyDistance(planBaselineWeeklyMiles)},
+          longest non-race run {formatDistance(planTrendLongestRun)},{" "}
           {trendNumberOfRuns} recent activities.
         </p>
       </div>
@@ -1688,13 +1747,13 @@ const planIntakeModal = isPlanIntakeOpen ? (
   longestRun,
   numberOfRuns,
   fitnessScore,
-  trainingLoad,
   trainingStatus: trainingLoadMetrics.status,
   trendAverageWeeklyMiles,
-  trendLongestRun,
+  trendLongestRun: planTrendLongestRun,
   trendAverageWeeklyRuns,
   goalRace,
   selectedGoalTime,
+  distanceUnit,
 });
 
   if (pageView === "activityDetail" && selectedRun) {
@@ -1710,26 +1769,29 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <h1>{selectedRun.type}</h1>
           </div>
 
-          <div className="buttonRow">
-            <button
-              className="secondaryButton"
-              onClick={() => setPageView("dashboard")}
-            >
-              Back to Dashboard
-            </button>
-            <button
-              className="secondaryButton"
-              onClick={handleClearTrainingPlan}
-            >
-              Clear Saved Plan
-            </button>
+          <div className="topBarActions">
+            {unitToggle}
+            <div className="buttonRow">
+              <button
+                className="secondaryButton"
+                onClick={() => setPageView("dashboard")}
+              >
+                Back to Dashboard
+              </button>
+              <button
+                className="secondaryButton"
+                onClick={handleClearTrainingPlan}
+              >
+                Clear Saved Plan
+              </button>
+            </div>
           </div>
         </header>
 
         <section className="activityHero">
           <div>
             <p className="eyebrow">{selectedRun.date}</p>
-            <h2>{formatMiles(selectedRun.distanceMiles)} miles</h2>
+            <h2>{formatDistance(selectedRun.distanceMiles)}</h2>
             <p className="bodyText">
               This activity is labeled <strong>{selectedRun.effort}</strong>
               {selectedRun.isRace ? " and came from a Strava race tag." : "."}
@@ -1805,11 +1867,11 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <div className="activityMetricList">
               <div>
                 <span>Distance</span>
-                <strong>{formatMiles(selectedRun.distanceMiles)} mi</strong>
+                <strong>{formatDistance(selectedRun.distanceMiles)}</strong>
               </div>
               <div>
                 <span>Pace</span>
-                <strong>{selectedRun.pace}</strong>
+                <strong>{formatRunPace(selectedRun.pace)}</strong>
               </div>
               <div>
                 <span>Elapsed Time</span>
@@ -1857,7 +1919,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <div className="activityMetricList">
               <div>
                 <span>Elevation Gain</span>
-                <strong>{formatOptionalFeet(selectedRun.elevationGainFeet)}</strong>
+                <strong>{formatElevation(selectedRun.elevationGainFeet)}</strong>
               </div>
               <div>
                 <span>Avg Cadence</span>
@@ -1924,13 +1986,16 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <h1>{trainingPlan.title}</h1>
           </div>
 
-          <div className="buttonRow">
-            <button
-              className="secondaryButton"
-              onClick={() => setPageView("dashboard")}
-            >
-              Back to Dashboard
-            </button>
+          <div className="topBarActions">
+            {unitToggle}
+            <div className="buttonRow">
+              <button
+                className="secondaryButton"
+                onClick={() => setPageView("dashboard")}
+              >
+                Back to Dashboard
+              </button>
+            </div>
           </div>
         </header>
 
@@ -2003,7 +2068,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
           <div className="planMetricGrid">
             <StatCard title="Weeks" value={`${trainingPlan.weeks.length}`} />
-            <StatCard title="90-Day Avg" value={`${formatMiles(trendAverageWeeklyMiles)} mi/wk`} />
+            <StatCard title="90-Day Avg" value={formatWeeklyDistance(trendAverageWeeklyMiles)} />
             <StatCard title="AI Confidence" value={trainingPlan.confidence} />
             <StatCard
               title="Max HR Used"
@@ -2078,7 +2143,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
           <div className="sectionHeader">
             <div>
               <h2>Weekly Training Schedule</h2>
-              <p>Each week now contains the selected number of runs with mileage distributed across the week.</p>
+              <p>Each week contains the selected number of runs with distance distributed across the week.</p>
             </div>
           </div>
 
@@ -2101,30 +2166,30 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
                 <div className="planWeekStats">
                   <div>
-                    <span>Mileage</span>
+                    <span>Weekly distance ({distanceUnit})</span>
                     <input
                       type="number"
                       min="0"
                       step="0.5"
-                      value={week.targetMiles}
+                      value={formatDistanceValue(week.targetMiles)}
                       onChange={(event) =>
                         handleUpdatePlanWeek(week.week, {
-                          targetMiles: Number(event.target.value),
+                          targetMiles: convertDisplayedDistanceToMiles(Number(event.target.value)),
                         })
                       }
                     />
                   </div>
 
                   <div>
-                    <span>Long run</span>
+                    <span>Long run ({distanceUnit})</span>
                     <input
                       type="number"
                       min="0"
                       step="0.5"
-                      value={week.longRunMiles}
+                      value={formatDistanceValue(week.longRunMiles)}
                       onChange={(event) =>
                         handleUpdatePlanWeek(week.week, {
-                          longRunMiles: Number(event.target.value),
+                          longRunMiles: convertDisplayedDistanceToMiles(Number(event.target.value)),
                         })
                       }
                     />
@@ -2143,7 +2208,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
                           })}
                         </span>
                         <strong>{workout.title}</strong>
-                        <em>{formatMiles(workout.miles)} mi</em>
+                        <em>{formatDistance(workout.miles)}</em>
                       </div>
                     ))}
                 </div>
@@ -2218,15 +2283,15 @@ const planIntakeModal = isPlanIntakeOpen ? (
     <main className="app">
     <header className="topBar">
   <div>
-    <p className="eyebrow">Race Readiness AI</p>
-    <h1>Running Fitness Dashboard</h1>
+    <p className="eyebrow">AI-powered training analysis</p>
+    <h1>Race Readiness</h1>
     <p className="topBarSubtitle">
-      Estimate race potential using training data, race formulas, and AI
-      coaching insight.
+      Understand your training, current race capability, and what to do next.
     </p>
   </div>
 
   <div className="topBarActions">
+    {unitToggle}
     <div className="buttonRow">
       <button className="secondaryButton" onClick={handleImportDataClick}>
         Import Data
@@ -2305,10 +2370,10 @@ const planIntakeModal = isPlanIntakeOpen ? (
   </section>
 
   <section className="statsGrid">
-    <StatCard title="7-Day Mileage" value={`${formatMiles(totalMiles)} mi`} />
-    <StatCard title="Longest Run" value={`${formatMiles(longestRun)} mi`} />
+    <StatCard title="7-Day Distance" value={formatDistance(totalMiles)} />
+    <StatCard title="Longest Run" value={formatDistance(longestRun)} />
     <StatCard title="Runs in 7 Days" value={`${numberOfRuns}`} />
-    <StatCard title="90-Day Avg" value={`${formatMiles(trendAverageWeeklyMiles)} mi/wk`} />
+    <StatCard title="90-Day Avg" value={formatWeeklyDistance(trendAverageWeeklyMiles)} />
     <StatCard title="Training Status" value={trainingLoadMetrics.status} />
   </section>
 </div>
@@ -2322,7 +2387,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
               <p>
                 Equivalent race performances from your strongest imported
                 race-tagged efforts. These do not assume future fitness gains
-                and do not add conservative mileage penalties.
+                and do not add conservative distance penalties.
               </p>
             </div>
           </div>
@@ -2360,7 +2425,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <h2>Fitness, fatigue, and form</h2>
             <p>
               This compares your last 7 days against your 6-week baseline using
-              mileage, effort, and heart rate when available. These are relative
+              distance, effort, and heart rate when available. These are relative
               load points, not scores out of 100.
             </p>
           </div>
@@ -2376,7 +2441,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
               </summary>
               <div className="loadHelpPopup">
                 <strong>How this is calculated</strong>
-                <p><b>Run load</b> = miles × effort multiplier × heart-rate multiplier.</p>
+                <p><b>Run load</b> = distance × effort multiplier × heart-rate multiplier.</p>
                 <p><b>Fatigue</b> = total run load from the latest 7 days.</p>
                 <p><b>Fitness</b> = average weekly run load across 6 weeks.</p>
                 <p><b>Form</b> = fitness − fatigue.</p>
@@ -2600,10 +2665,10 @@ const planIntakeModal = isPlanIntakeOpen ? (
               <span>{day.day}</span>
               <div className="calendarDayDetails">
                 {day.runs.length > 0 && (
-                  <strong>{formatMiles(day.miles)} mi done</strong>
+                  <strong>{formatDistance(day.miles)} done</strong>
                 )}
                 {day.plannedWorkouts.length > 0 && (
-                  <em>{formatMiles(day.plannedMiles)} mi planned</em>
+                  <em>{formatDistance(day.plannedMiles)} planned</em>
                 )}
               </div>
             </button>
@@ -2723,6 +2788,8 @@ const planIntakeModal = isPlanIntakeOpen ? (
       key={`${run.date}-${run.type}-${run.distanceMiles}`}
       run={run}
       onSelect={handleSelectRun}
+      formatDistance={formatDistance}
+      formatPace={formatRunPace}
     />
   ))}
 </div>
@@ -2756,17 +2823,17 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
         <div className="breakdownGrid">
   <div className="breakdownBox">
-    <p>Mileage</p>
+    <p>This Week's Distance</p>
     <strong>{fitnessBreakdown.mileage}</strong>
   </div>
 
   <div className="breakdownBox">
-    <p>Long Run</p>
+    <p>This Week's Long Run</p>
     <strong>{fitnessBreakdown.longRun}</strong>
   </div>
 
   <div className="breakdownBox">
-    <p>Consistency</p>
+    <p>This Week's Consistency</p>
     <strong>{fitnessBreakdown.consistency}</strong>
   </div>
 </div>
@@ -2790,19 +2857,27 @@ const planIntakeModal = isPlanIntakeOpen ? (
   <div className="insightBox">
     <p className="insightLabel">Risks</p>
     <ul>
-      {(aiSummary ? aiSummary.risks : aiCoachSummary.risks).map((risk) => (
-        <li key={risk}>{risk}</li>
-      ))}
+      {(aiSummary ? aiSummary.risks : aiCoachSummary.risks).length > 0 ? (
+        (aiSummary ? aiSummary.risks : aiCoachSummary.risks).map((risk) => (
+          <li key={risk}>{risk}</li>
+        ))
+      ) : (
+        <li>No major risks detected from the current data.</li>
+      )}
     </ul>
   </div>
 
   <div className="insightBox">
     <p className="insightLabel">Suggestions</p>
     <ul>
-      {(aiSummary ? aiSummary.suggestions : aiCoachSummary.suggestions).map(
-        (suggestion) => (
+      {(aiSummary ? aiSummary.suggestions : aiCoachSummary.suggestions).length > 0 ? (
+        (aiSummary ? aiSummary.suggestions : aiCoachSummary.suggestions).map(
+          (suggestion) => (
           <li key={suggestion}>{suggestion}</li>
         )
+        )
+      ) : (
+        <li>Keep training consistently and refresh after your next week.</li>
       )}
     </ul>
   </div>

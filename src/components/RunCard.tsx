@@ -3,9 +3,11 @@ import type { Run } from "../data/sampleRuns";
 type RunCardProps = {
   run: Run;
   onSelect: (run: Run) => void;
+  formatDistance: (miles: number) => string;
+  formatPace: (pace: string) => string;
 };
 
-function RunCard({ run, onSelect }: RunCardProps) {
+function RunCard({ run, onSelect, formatDistance, formatPace }: RunCardProps) {
   return (
     <button className="runBox" type="button" onClick={() => onSelect(run)}>
       <div>
@@ -15,8 +17,8 @@ function RunCard({ run, onSelect }: RunCardProps) {
 
       <div className="runDetails">
         <div>
-          <strong>{run.distanceMiles} mi</strong>
-          <p>{run.pace}</p>
+          <strong>{formatDistance(run.distanceMiles)}</strong>
+          <p>{formatPace(run.pace)}</p>
         </div>
 
         <div className="runPills">
