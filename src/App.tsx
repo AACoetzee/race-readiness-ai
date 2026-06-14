@@ -51,6 +51,7 @@ const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
 const TREND_WINDOW_DAYS = 90;
 const RECENT_BASELINE_WINDOW_DAYS = 42;
+const SAVED_RUNS_KEY = "race-readiness-runs";
 const SAVED_TRAINING_PLAN_KEY = "race-readiness-training-plan";
 const SAVED_PLAN_PREFERENCES_KEY = "race-readiness-plan-preferences";
 const SAVED_MAX_HEART_RATE_KEY = "race-readiness-max-heart-rate";
@@ -388,14 +389,63 @@ function getWorkoutDay(longRunDay: string, restDay: string) {
   );
 }
 
-function getEasyRunDay(longRunDay: string, restDay: string, workoutDay: string) {
-  const preferredDays = ["Thursday", "Friday", "Wednesday", "Tuesday", "Saturday"];
-
-  return (
-    preferredDays.find(
-      (day) => day !== longRunDay && day !== restDay && day !== workoutDay
-    ) ?? "Thursday"
+function getWeeklyRunDays(preferences: TrainingPlanPreferences) {
+  const allDays = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+  ];
+  const workoutDay = getWorkoutDay(preferences.longRunDay, preferences.restDay);
+  const desiredRunDays = Math.min(7, Math.max(3, preferences.daysPerWeek));
+  const availableDays = allDays.filter(
+    (day) => day !== preferences.restDay || desiredRunDays === 7
   );
+  const selectedDays = new Set([preferences.longRunDay, workoutDay]);
+
+  // Prefer days that create a familiar quality/easy/long-run weekly rhythm.
+  const preferredEasyDays = [
+    "Wednesday",
+    "Friday",
+    "Saturday",
+    "Monday",
+    "Thursday",
+    "Tuesday",
+    "Sunday",
+  ];
+
+  for (const day of preferredEasyDays) {
+    if (selectedDays.size >= desiredRunDays) {
+      break;
+    }
+
+    if (availableDays.includes(day)) {
+      selectedDays.add(day);
+    }
+  }
+
+  return {
+    workoutDay,
+    runDays: allDays.filter((day) => selectedDays.has(day)),
+  };
+}
+
+function splitMileage(totalMiles: number, numberOfRuns: number) {
+  if (numberOfRuns <= 0) {
+    return [];
+  }
+
+  const baseMiles = Math.floor((totalMiles / numberOfRuns) * 10) / 10;
+  const mileages = Array.from({ length: numberOfRuns }, () => baseMiles);
+  const assignedMiles = baseMiles * numberOfRuns;
+  mileages[mileages.length - 1] = Number(
+    (baseMiles + totalMiles - assignedMiles).toFixed(1)
+  );
+
+  return mileages;
 }
 
 function getPlannedWorkouts(
@@ -410,21 +460,30 @@ function getPlannedWorkouts(
   // Convert weekly plan rows into dated workouts so the calendar can show the future.
   const startDate = new Date(`${currentDate}T00:00:00`);
   const weekStart = addDays(startDate, -startDate.getDay());
-  const workoutDay = getWorkoutDay(preferences.longRunDay, preferences.restDay);
-  const easyRunDay = getEasyRunDay(
-    preferences.longRunDay,
-    preferences.restDay,
-    workoutDay
-  );
+  const { workoutDay, runDays } = getWeeklyRunDays(preferences);
 
   return plan.weeks.flatMap((week) => {
     const currentWeekStart = addDays(weekStart, (week.week - 1) * 7);
     const longRunDate = getWeekdayDate(currentWeekStart, preferences.longRunDay);
     const workoutDate = getWeekdayDate(currentWeekStart, workoutDay);
-    const easyMileage = Math.max(
+    const nonLongRunMileage = Math.max(
       0,
       Number((week.targetMiles - week.longRunMiles).toFixed(1))
     );
+    const hasQualityWorkout =
+      Boolean(week.workoutFocus) &&
+      week.phase !== "Race week" &&
+      week.phase !== "Recovery";
+    const qualityMiles = hasQualityWorkout
+      ? Number(Math.min(week.targetMiles * 0.2, nonLongRunMileage).toFixed(1))
+      : 0;
+    const easyRunDays = runDays.filter(
+      (day) =>
+        day !== preferences.longRunDay &&
+        (!hasQualityWorkout || day !== workoutDay)
+    );
+    const easyMileage = Number((nonLongRunMileage - qualityMiles).toFixed(1));
+    const easyMileages = splitMileage(easyMileage, easyRunDays.length);
     const workouts: PlannedWorkout[] = [
       {
         date: formatDateForInput(longRunDate),
@@ -435,25 +494,30 @@ function getPlannedWorkouts(
       },
     ];
 
-    if (week.workoutFocus && week.phase !== "Race week") {
+    if (hasQualityWorkout) {
       workouts.push({
         date: formatDateForInput(workoutDate),
         title: week.workoutFocus,
         type: "Workout",
-        miles: Number(Math.min(week.targetMiles * 0.28, easyMileage).toFixed(1)),
+        miles: qualityMiles,
         week: week.week,
       });
     }
 
-    if (easyMileage > 0) {
+    easyRunDays.forEach((day, index) => {
+      const isRecoveryRun =
+        day === preferences.restDay ||
+        getWeekdayIndex(day) ===
+          (getWeekdayIndex(preferences.longRunDay) + 1) % 7;
+
       workouts.push({
-        date: formatDateForInput(getWeekdayDate(currentWeekStart, easyRunDay)),
-        title: "Easy mileage",
+        date: formatDateForInput(getWeekdayDate(currentWeekStart, day)),
+        title: isRecoveryRun ? "Recovery run" : "Easy aerobic run",
         type: "Easy",
-        miles: Number(Math.max(0, easyMileage - workouts.slice(1).reduce((sum, workout) => sum + workout.miles, 0)).toFixed(1)),
+        miles: easyMileages[index],
         week: week.week,
       });
-    }
+    });
 
     return workouts.filter((workout) => workout.miles > 0);
   });
@@ -656,7 +720,19 @@ function App() {
 const [goalRace, setGoalRace] = useState("Half Marathon");
 const [pastRaceDistance, setPastRaceDistance] = useState("5K");
 const [pastRaceTime, setPastRaceTime] = useState("00:00"); 
-const [runs, setRuns] = useState<Run[]>(sampleRuns);
+const [runs, setRuns] = useState<Run[]>(() => {
+  // Keep an imported Strava history after refreshes. Sample runs are used only
+  // when the user has never imported valid activity data in this browser.
+  try {
+    const storedRuns = JSON.parse(getStorage()?.getItem(SAVED_RUNS_KEY) ?? "null");
+
+    return Array.isArray(storedRuns) && storedRuns.length > 0 && storedRuns.every(isRun)
+      ? storedRuns
+      : sampleRuns;
+  } catch {
+    return sampleRuns;
+  }
+});
 const [showAllRuns, setShowAllRuns] = useState(false);
 const [actionMessage, setActionMessage] = useState("");
 const [isImportingStrava, setIsImportingStrava] = useState(false);
@@ -866,6 +942,12 @@ const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
 const [activityInsights, setActivityInsights] = useState<Record<string, ActivityInsight>>({});
 const [isLoadingActivityInsight, setIsLoadingActivityInsight] = useState(false);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
+
+useEffect(() => {
+  // Imported runs drive every fitness and plan calculation, so they must
+  // survive a page refresh just like the generated training plan does.
+  getStorage()?.setItem(SAVED_RUNS_KEY, JSON.stringify(runs));
+}, [runs]);
 
 useEffect(() => {
   // useEffect runs after React renders. This effect watches `trainingPlan` and
@@ -1962,8 +2044,41 @@ const planIntakeModal = isPlanIntakeOpen ? (
         <section className="card">
           <div className="sectionHeader">
             <div>
-              <h2>Basic Plan</h2>
-              <p>Use this as a simple guide, then adjust around fatigue, life, and workouts.</p>
+              <p className="eyebrow">Plan Method</p>
+              <h2>80/20-style, consistently structured</h2>
+              <p>
+                The schedule follows your selected {planPreferences.daysPerWeek}-run
+                week: most running stays easy, with a small amount of purposeful
+                faster work.
+              </p>
+            </div>
+          </div>
+
+          <div className="planMethodGrid">
+            <div>
+              <strong>Mostly easy</strong>
+              <p>About 80% of training should feel conversational and controlled.</p>
+            </div>
+            <div>
+              <strong>Limited quality work</strong>
+              <p>Three to five run weeks use one main workout; higher-frequency plans may use two.</p>
+            </div>
+            <div>
+              <strong>Weekly long run</strong>
+              <p>The {planPreferences.longRunDay} long run builds endurance for {goalRace}.</p>
+            </div>
+            <div>
+              <strong>Protected recovery</strong>
+              <p>{planPreferences.restDay} remains the preferred rest day unless seven runs are selected.</p>
+            </div>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="sectionHeader">
+            <div>
+              <h2>Weekly Training Schedule</h2>
+              <p>Each week now contains the selected number of runs with mileage distributed across the week.</p>
             </div>
           </div>
 
@@ -2014,6 +2129,23 @@ const planIntakeModal = isPlanIntakeOpen ? (
                       }
                     />
                   </div>
+                </div>
+
+                <div className="planDailySchedule">
+                  {plannedWorkouts
+                    .filter((workout) => workout.week === week.week)
+                    .sort((a, b) => a.date.localeCompare(b.date))
+                    .map((workout) => (
+                      <div key={`${workout.date}-${workout.title}`}>
+                        <span>
+                          {new Date(`${workout.date}T00:00:00`).toLocaleDateString("en-US", {
+                            weekday: "short",
+                          })}
+                        </span>
+                        <strong>{workout.title}</strong>
+                        <em>{formatMiles(workout.miles)} mi</em>
+                      </div>
+                    ))}
                 </div>
 
                 <label className="planWeekField">

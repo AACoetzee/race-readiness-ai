@@ -605,6 +605,69 @@ h3 {
   text-transform: none;
 }
 
+.planMethodGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.planMethodGrid div {
+  border: 1px solid #d7e5df;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.planMethodGrid strong {
+  display: block;
+  margin-bottom: 7px;
+  color: #0f766e;
+}
+
+.planMethodGrid p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.planDailySchedule {
+  display: grid;
+  gap: 6px;
+}
+
+.planDailySchedule div {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.planDailySchedule span {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.planDailySchedule strong {
+  overflow: hidden;
+  color: #334155;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planDailySchedule em {
+  color: #111827;
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 .planAssumptions {
   margin: 0;
   padding-left: 20px;
@@ -1963,7 +2026,8 @@ h3 {
   .loadMetricGrid,
   .fitnessChart,
   .planGoalGrid,
-  .planWeekList {
+  .planWeekList,
+  .planMethodGrid {
     grid-template-columns: 1fr;
   }
 

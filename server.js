@@ -883,6 +883,7 @@ function normalizeTrainingPlan(
             ? 1.4
             : 1.25;
   let previousMileage = startingMileage;
+  let previousLongRun = Math.min(longRunCap, Math.max(6, startingMileage * 0.28));
 
   return {
     ...plan,
@@ -925,10 +926,14 @@ function normalizeTrainingPlan(
             longRunCap,
             Math.max(6, targetMiles * (isCutbackWeek ? 0.22 : 0.28))
           );
+      const recoveryLongRunCap = isCutbackWeek
+        ? Math.max(minimumLongRun, previousLongRun * 0.85)
+        : weeklyLongRunCap;
       const longRunMiles = Number(
         Math.min(
           Math.max(week.longRunMiles, minimumLongRun),
-          weeklyLongRunCap
+          weeklyLongRunCap,
+          recoveryLongRunCap
         ).toFixed(1)
       );
       const phase = isRaceWeek
@@ -949,15 +954,18 @@ function normalizeTrainingPlan(
           `${week.phase} ${week.workoutFocus} ${week.notes}`
         );
       previousMileage = targetMiles;
+      previousLongRun = longRunMiles;
 
       return {
         ...week,
         phase,
         targetMiles,
         longRunMiles,
-        workoutFocus: hasPrematureRaceLanguage
-          ? "One controlled race-specific workout; keep the remaining runs easy"
-          : week.workoutFocus,
+        workoutFocus: isCutbackWeek
+          ? "No structured workout; finish one easy run with 4-6 x 20 sec relaxed strides and full easy recovery"
+          : hasPrematureRaceLanguage
+            ? "One controlled race-specific workout; keep the remaining runs easy"
+            : week.workoutFocus,
         notes: hasPrematureRaceLanguage
           ? `Continue building toward race day; keep the requested ${planPreferences?.longRunDay || "weekend"} long run and ${planPreferences?.restDay || "preferred"} rest day.`
           : week.notes,
@@ -1327,9 +1335,11 @@ app.post("/api/training-plan", async (req, res) => {
     const response = await openai.responses.create({
       model: AI_MODEL,
       input: `
-You are a running coach creating a basic race training plan.
+You are a running coach creating a practical, specific race training plan.
 
-Generate a simple week-by-week plan using the runner data below.
+Generate a week-by-week plan using the runner data below. Follow an 80/20-style
+training structure: roughly 80% of running should be easy and conversational,
+while the remaining training is purposeful quality work.
 
 Data:
 ${JSON.stringify(runnerData, null, 2)}
@@ -1349,8 +1359,13 @@ Rules:
 - The supplied mostRecentRace is a fitness anchor, not a normal long-run training baseline.
 - Heart-rate data is mostly run-level average/max data, not full time-in-zone data. Do not pretend you know exact miles in each zone.
 - Use heart rate as guidance: easy runs should usually stay conversational and mostly Z1/Z2; workouts may touch Z3/Z4/Z5 depending on the race.
-- Keep the plan basic, realistic, and safe: one long run, mostly easy running, at most two quality sessions per week.
-- The weekly structure should respect daysPerWeek when possible. If the runner asks for fewer days, reduce frequency before increasing workout intensity.
+- Keep the plan realistic and safe: one long run and mostly easy running every week.
+- For 3-5 running days per week, prescribe one main quality session. For 6-7 running days, prescribe at most two quality sessions, and only when the runner's history supports it.
+- Make workoutFocus a specific session the runner can perform, not a vague goal. Include a warm-up, the exact work intervals or tempo duration, recoveries, and a cool-down. Example format: "1 mi easy, 3 x 8 min threshold with 2 min jog, 1 mi easy."
+- Keep the complete workoutFocus session, including warm-up and cool-down, close to 20% of that week's targetMiles so the prescription fits the daily mileage allocation.
+- Progress workoutFocus with the phase: controlled strides or hills in Base, threshold or longer aerobic intervals in Build, race-specific work near the peak, then short sharpening during taper.
+- Recovery weeks should reduce volume and workout demand, not simply repeat the prior build week.
+- The weekly structure must respect daysPerWeek. If the runner asks for fewer days, reduce frequency before increasing workout intensity.
 - Mention the requested longRunDay and restDay in notes when useful.
 - Build gradually from the current 90-day mileage. Avoid huge jumps from the runner's current baseline.
 - Include cutback/recovery weeks when useful.
