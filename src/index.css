@@ -1683,6 +1683,145 @@ h3 {
   border-radius: 999px;
 }
 
+.fitnessLineChart {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.fitnessChartCard {
+  min-width: 0;
+}
+
+.fitnessLineChart svg {
+  display: block;
+  width: 100%;
+  min-width: 760px;
+  height: auto;
+}
+
+.chartGrid line {
+  stroke: #e7e7e7;
+  stroke-width: 1;
+}
+
+.fitnessArea {
+  fill: #e9f5fb;
+  opacity: 0.78;
+}
+
+.fitnessLine,
+.fatigueLine,
+.formTrendLine {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.fitnessLine {
+  stroke: #5bb2e6;
+}
+
+.fatigueLine {
+  stroke: #7754d7;
+}
+
+.formTrendLine {
+  stroke: #8a8a8a;
+}
+
+.fitnessDot {
+  fill: #5bb2e6;
+}
+
+.fatigueDot {
+  fill: #7754d7;
+}
+
+.formDot {
+  fill: #8a8a8a;
+}
+
+.formZone {
+  opacity: 0.42;
+}
+
+.formZoneTransition {
+  fill: #fff4d9;
+}
+
+.formZoneFresh {
+  fill: #e8f5fd;
+}
+
+.formZoneGrey {
+  fill: #f4f4f4;
+}
+
+.formZoneOptimal {
+  fill: #eaf7e8;
+}
+
+.formZoneRisk {
+  fill: #fde9e7;
+}
+
+.formZero {
+  stroke: #b6b6b6;
+  stroke-dasharray: 5 5;
+  stroke-width: 1;
+}
+
+.chartTick,
+.chartDate,
+.chartAxisTitle,
+.chartCurrent text {
+  fill: #777777;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.chartAxisTitle {
+  font-size: 14px;
+}
+
+.chartCurrent .currentFitness {
+  fill: #3f9fd8;
+  font-weight: 700;
+}
+
+.chartCurrent .currentFatigue {
+  fill: #6f4bd2;
+  font-weight: 700;
+}
+
+.chartCurrent .currentForm {
+  fill: #666666;
+  font-weight: 700;
+}
+
+.chartCurrent .zoneTransitionLabel {
+  fill: #c9911e;
+}
+
+.chartCurrent .zoneFreshLabel {
+  fill: #4da6d8;
+}
+
+.chartCurrent .zoneGreyLabel {
+  fill: #858585;
+}
+
+.chartCurrent .zoneOptimalLabel {
+  fill: #55a94e;
+}
+
+.chartCurrent .zoneRiskLabel {
+  fill: #d34c40;
+}
+
 .coachButton {
   width: auto;
   margin: 0;

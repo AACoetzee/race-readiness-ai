@@ -30,10 +30,10 @@ export function generateAICoachSummary({
   const strengths: string[] = [];
   const risks: string[] = [];
   const suggestions: string[] = [];
-  const distanceMultiplier = distanceUnit === "km" ? 1.609344 : 1;
-  const distanceLabel = distanceUnit === "km" ? "km" : "mi";
   const formatDistance = (miles: number) =>
-    `${(miles * distanceMultiplier).toFixed(1)} ${distanceLabel}`;
+    distanceUnit === "km"
+      ? `${(miles * 1.609344).toFixed(1)} km (${miles.toFixed(1)} mi)`
+      : `${miles.toFixed(1)} mi (${(miles * 1.609344).toFixed(1)} km)`;
 
   // Use the longer trend for strengths so one unusual week does not erase them.
   if (trendAverageWeeklyMiles >= 30) {

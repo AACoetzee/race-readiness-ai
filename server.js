@@ -435,21 +435,25 @@ function normalizeAiSummary(summary, context) {
     "Half Marathon": 12,
     Marathon: 18,
   }[context.goalRace];
-  const distanceMultiplier = context.displayUnit === "km" ? 1.609344 : 1;
-  const distanceLabel = context.displayUnit === "km" ? "km" : "mi";
   const formatDistance = (miles) =>
-    `${(miles * distanceMultiplier).toFixed(1)} ${distanceLabel}`;
+    context.displayUnit === "km"
+      ? `${(miles * 1.609344).toFixed(1)} km (${miles.toFixed(1)} mi)`
+      : `${miles.toFixed(1)} mi (${(miles * 1.609344).toFixed(1)} km)`;
   const formatSummaryUnits = (text) => {
     if (context.displayUnit !== "km") {
       return text;
     }
 
+    if (/\bkm\b.*\bmi\b|\bmi\b.*\bkm\b/i.test(text)) {
+      return text;
+    }
+
     return text
       .replace(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/gi, (_, miles) =>
-        `${(Number(miles) * 1.609344).toFixed(1)} km`
+        `${(Number(miles) * 1.609344).toFixed(1)} km (${Number(miles).toFixed(1)} mi)`
       )
       .replace(/(\d+(?:\.\d+)?)-mile\b/gi, (_, miles) =>
-        `${(Number(miles) * 1.609344).toFixed(1)}-km`
+        `${(Number(miles) * 1.609344).toFixed(1)}-km (${Number(miles).toFixed(1)} mi)`
       );
   };
 
@@ -471,19 +475,29 @@ function normalizeAiSummary(summary, context) {
 
   if (context.trendLongestRun >= goalLongRunThreshold) {
     const needsLongerRunPattern =
-      /\b(increase|build|extend|progress|need|short).{0,35}\b(long run|race distance|distance)\b|\b(long run|distance).{0,35}\b(increase|build|extend|progress|need|short)\b/i;
+      /\b(increase|build|extend|progress|need|short|approach|exceed).{0,60}\b(long[- ]?runs?|race distance|distance)\b|\b(long[- ]?runs?|distance).{0,60}\b(increase|build|extend|progress|need|short|approach|exceed)\b/i;
+    const misleadingLongRunAverage = /\blong[- ]?runs?\b.{0,25}\baverag/i;
 
     risks.splice(
       0,
       risks.length,
-      ...risks.filter((item) => !needsLongerRunPattern.test(item))
+      ...risks.filter(
+        (item) =>
+          !needsLongerRunPattern.test(item) &&
+          !misleadingLongRunAverage.test(item)
+      )
     );
     suggestions.splice(
       0,
       suggestions.length,
       ...suggestions.filter((item) => !needsLongerRunPattern.test(item))
     );
-    strengths.push(
+    strengths.splice(
+      0,
+      strengths.length,
+      ...strengths.filter((item) => !misleadingLongRunAverage.test(item))
+    );
+    strengths.unshift(
       `Your non-race history includes a ${formatDistance(context.trendLongestRun)} activity, so basic endurance distance is already demonstrated.`
     );
   }
@@ -1279,10 +1293,10 @@ app.post("/api/ai-summary", async (req, res) => {
     goalRaceDate,
     weeksUntilGoalRace,
   } = req.body;
-  const displayDistanceMultiplier = displayUnit === "km" ? 1.609344 : 1;
-  const displayDistanceLabel = displayUnit === "km" ? "km" : "mi";
   const displayDistance = (miles) =>
-    `${(miles * displayDistanceMultiplier).toFixed(1)} ${displayDistanceLabel}`;
+    displayUnit === "km"
+      ? `${(miles * 1.609344).toFixed(1)} km (${miles.toFixed(1)} mi)`
+      : `${miles.toFixed(1)} mi (${(miles * 1.609344).toFixed(1)} km)`;
 
   const runnerData = {
     totalMiles,
@@ -1340,7 +1354,7 @@ Prediction rules:
 - Use the ${trendWindowDays}-day trend data to judge confidence and realism.
 - Do not judge race readiness from only the most recent 7 days.
 - The relative current training status is ${trainingStatus}. Use it instead of describing load from an absolute mileage threshold.
-- Write all user-facing distances using ${displayUnit === "km" ? "kilometers" : "miles"}. The supplied numeric training fields remain internally measured in miles.
+- Write all user-facing distances using the exact dual-unit values in displayMetrics, with ${displayUnit === "km" ? "kilometers" : "miles"} first.
 - Use displayMetrics exactly when mentioning distances. Do not relabel a raw mile value as kilometers.
 - The runner averages ${trendAverageWeeklyRuns.toFixed(1)} runs per week and completed ${numberOfRuns} runs in the latest week. Do not call frequency low or suggest fewer runs when either value is already 4 or more.
 - trendLongestRun excludes race-tagged activities. Treat it as the normal training long-run signal.

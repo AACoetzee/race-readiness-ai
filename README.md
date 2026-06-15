@@ -1,24 +1,27 @@
 # Race Readiness AI
 
-Race Readiness AI is a full-stack running dashboard that estimates a runner's current fitness and race potential.
+Race Readiness AI is a full-stack running dashboard that explains a runner's current fitness, training load, race capability, and preparation needs.
 
-The app uses sample running data, race prediction formulas, and an AI-generated coaching summary to help explain a runner's strengths, risks, and possible race outcomes.
+The app combines Strava activity history, deterministic fitness calculations, race-tagged performances, and structured AI coaching.
 
 ## What It Does
 
 - Displays a running fitness dashboard
-- Calculates weekly mileage, longest run, number of runs, and training load
+- Calculates weekly distance, longest run, number of runs, and training load
+- Switches all displayed distance, pace, elevation, plan, and AI-summary values between miles and kilometers
+- Charts 14 weeks of fitness, fatigue, and form with fresh, optimal, and high-risk zones
 - Estimates race potential for:
   - 5K
   - 10K
   - Half Marathon
   - Marathon
-- Lets the user enter a past race distance and time
-- Uses a race prediction formula to estimate future race times
+- Automatically uses Strava race-tagged activities as race data
+- Shows current race capability estimates from imported race history
 - Lets the user select a goal race and goal race date
 - Uses AI to generate a coaching-style summary
 - Imports real activity data from Strava
-- Generates AI activity analysis and training plans
+- Generates AI activity analysis, weekly check-ins, and race training plans
+- Builds training plans around the runner's Strava baseline, preferred run frequency, rest day, long-run day, and goal
 - Highlights strengths, risks, and suggestions
 
 ## Tech Stack
@@ -51,15 +54,18 @@ This project is also a foundation for a future Strava-connected app.
 
 The dashboard shows:
 
-- Weekly mileage
+- Weekly distance
 - Longest run
 - Runs this week
-- Training load
+- Fitness, fatigue, form, ramp rate, and training status
 - Fitness score
+- Current race capability
+- A 14-week connected fitness/fatigue/form chart
+- A saved miles/kilometers display preference
 
 ### Race Prediction
 
-The app allows the user to enter a past race result.
+Race-tagged Strava activities are used automatically. Manual race data is used as a fallback.
 
 Example:
 
@@ -69,7 +75,7 @@ Past time: 22:30
 Goal race: Half Marathon
 ```
 
-The app then estimates race potential using a race prediction formula and training adjustments.
+The app estimates equivalent current race capabilities from the strongest imported race performances.
 
 ### AI Summary
 
@@ -82,6 +88,24 @@ The AI summary uses the runner's current data to generate:
 - Strengths
 - Risks
 - Suggestions
+
+Distances in AI summaries are normalized after generation. The selected unit is
+shown first, with the equivalent second unit when useful, for example:
+
+```text
+36.4 km (22.6 mi)
+```
+
+### Training Plans
+
+The plan generator:
+
+- Uses the stronger sustained baseline from the 90-day and latest 6-week Strava trends
+- Respects the selected number of running days
+- Uses an 80/20-style structure with mostly easy running
+- Schedules a weekly long run and limited quality work
+- Adds genuine recovery weeks, tapering, and race week
+- Converts plan distances safely between miles and kilometers for display and editing
 
 ## Architecture
 
@@ -137,14 +161,14 @@ Strava or imported JSON
 - Calculates 7-day, 42-day, and 90-day training metrics
 - Displays activities, calendar months, heart-rate zones, load charts, and training plans
 - Requests AI summaries, activity analysis, weekly check-ins, and training plans
-- Saves plan preferences, edited plans, and configured maximum heart rate in browser storage
+- Saves imported runs, distance-unit preference, plan preferences, edited plans, and configured maximum heart rate in browser storage
 
 `src/utils/fitnessCalculations.ts` contains deterministic calculations. These calculations run without AI and include:
 
 - Fitness score
 - Training load, fatigue, fitness, form, and ramp rate
 - Race-time predictions using recent race-tagged performances
-- Eight-week load history
+- Fourteen-week fitness, fatigue, and form history
 
 ### Backend Responsibilities
 
@@ -176,6 +200,7 @@ AI generates explanations and proposes plans, but it does not control every calc
 - Race predictions begin with deterministic race formulas.
 - Imported data and AI responses are validated before use.
 - The training-plan normalizer enforces mileage progression, long-run limits, recovery weeks, taper timing, and final race week.
+- The AI-summary normalizer removes contradictory advice and verifies unit conversions.
 - Missing information, such as weather data, is reported as missing instead of being invented.
 
 ## Project Structure
@@ -314,15 +339,13 @@ The race predictions are estimates and should not be treated as guaranteed race 
 
 The AI summary is meant to explain the data and provide general training insight. It is not medical advice.
 
-Weather is not currently imported, so activity analysis reports weather as unavailable instead of guessing.
+Weather analysis depends on whether weather fields are available in the imported activity.
 
 ## Future Improvements
 
 Planned improvements:
 
-- Add weekly mileage trends
 - Add pace trend charts
-- Add weather data to activity analysis
 - Improve race prediction logic
 - Add user authentication
 - Save athlete profiles
@@ -330,7 +353,7 @@ Planned improvements:
 
 ## Notes
 
-This project uses a science-based race prediction formula as a starting point, then uses AI to provide context around the estimate.
+This project uses deterministic calculations and race-tagged performances as the factual starting point, then uses AI to explain the data and propose training.
 
 The formula gives a baseline estimate.
 

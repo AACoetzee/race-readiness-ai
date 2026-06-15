@@ -880,7 +880,7 @@ const planBaselineWeeklyMiles = Math.max(
   trendAverageWeeklyMiles,
   recentAverageWeeklyMiles
 );
-const fitnessTimeline = calculateTrainingLoadTimeline(trendRuns, 8);
+const fitnessTimeline = calculateTrainingLoadTimeline(trendRuns, 14);
 const plannedWorkouts = getPlannedWorkouts(trainingPlan, currentDate, planPreferences);
 const calendarDays = getCalendarDays(runs, plannedWorkouts, calendarReferenceDate);
 const calendarMonthLabel = getCalendarMonthLabel(calendarReferenceDate);
@@ -892,10 +892,35 @@ const maxChartLoad = Math.max(
   ...fitnessTimeline.flatMap((point) => [point.acuteLoad, point.chronicLoad])
 );
 const chartScaleMax = Math.ceil(maxChartLoad / 10) * 10;
-const maxAbsoluteForm = Math.max(
-  1,
-  ...fitnessTimeline.map((point) => Math.abs(point.form))
-);
+const loadChartLeft = 52;
+const loadChartRight = 948;
+const loadChartTop = 24;
+const loadChartBottom = 230;
+const formChartTop = 282;
+const formChartBottom = 400;
+const formScaleMin = Math.min(-30, ...fitnessTimeline.map((point) => point.form));
+const formScaleMax = Math.max(20, ...fitnessTimeline.map((point) => point.form));
+const chartX = (index: number) =>
+  loadChartLeft +
+  (index / Math.max(1, fitnessTimeline.length - 1)) *
+    (loadChartRight - loadChartLeft);
+const loadY = (load: number) =>
+  loadChartBottom - (load / chartScaleMax) * (loadChartBottom - loadChartTop);
+const formY = (form: number) =>
+  formChartBottom -
+  ((form - formScaleMin) / (formScaleMax - formScaleMin)) *
+    (formChartBottom - formChartTop);
+const fitnessLinePoints = fitnessTimeline
+  .map((point, index) => `${chartX(index)},${loadY(point.chronicLoad)}`)
+  .join(" ");
+const fatigueLinePoints = fitnessTimeline
+  .map((point, index) => `${chartX(index)},${loadY(point.acuteLoad)}`)
+  .join(" ");
+const fitnessAreaPoints = `${loadChartLeft},${loadChartBottom} ${fitnessLinePoints} ${loadChartRight},${loadChartBottom}`;
+const formLinePoints = fitnessTimeline
+  .map((point, index) => `${chartX(index)},${formY(point.form)}`)
+  .join(" ");
+const latestTimelinePoint = fitnessTimeline.at(-1);
 
 const racePredictions = isPastRaceTimeValid
   ? calculateRacePredictionsFromHistory(
@@ -2490,70 +2515,83 @@ const planIntakeModal = isPlanIntakeOpen ? (
           <div className="sectionHeader">
             <div>
               <p className="eyebrow">Fitness Chart</p>
-              <h2>8-week load trend</h2>
+              <h2>14-week fitness trend</h2>
               <p>
-                Fitness and fatigue use relative load points. Form is fitness
-                minus fatigue and is shown around the zero line below.
+                Fitness tracks your longer-term training base. Fatigue reacts
+                faster to recent training. Form is fitness minus fatigue.
               </p>
             </div>
           </div>
 
-          <div className="loadChartWithScale">
-            <div className="loadChartScale" aria-hidden="true">
-              <span>{chartScaleMax}</span>
-              <span>{Math.round(chartScaleMax / 2)}</span>
-              <span>0</span>
-            </div>
+          <div className="fitnessLineChart">
+            <svg
+              aria-label="Fitness, fatigue, and form trend"
+              role="img"
+              viewBox="0 0 1120 440"
+            >
+              <g className="chartGrid">
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                  const y = loadChartBottom - ratio * (loadChartBottom - loadChartTop);
+                  return <line key={ratio} x1={loadChartLeft} x2={loadChartRight} y1={y} y2={y} />;
+                })}
+              </g>
 
-            <div className="fitnessChart">
-              {fitnessTimeline.map((point) => (
-                <div className="chartColumn" key={point.date}>
-                  <div className="chartBars">
-                    <span
-                      className="chartBar chartBarFitness"
-                      style={{ height: `${Math.max(6, (point.chronicLoad / maxChartLoad) * 100)}%` }}
-                      title={`Fitness ${point.chronicLoad} load points`}
-                    />
-                    <span
-                      className="chartBar chartBarFatigue"
-                      style={{ height: `${Math.max(6, (point.acuteLoad / maxChartLoad) * 100)}%` }}
-                      title={`Fatigue ${point.acuteLoad} load points`}
-                    />
-                  </div>
-                  <strong>{point.form > 0 ? `+${point.form}` : point.form}</strong>
-                  <span>{getShortDateLabel(point.date)}</span>
-                </div>
+              <polygon className="fitnessArea" points={fitnessAreaPoints} />
+              <polyline className="fitnessLine" points={fitnessLinePoints} />
+              <polyline className="fatigueLine" points={fatigueLinePoints} />
+
+              <text className="chartAxisTitle" transform="rotate(-90 18 150)" x="18" y="150">
+                Training load
+              </text>
+              <text className="chartAxisTitle" transform="rotate(-90 18 350)" x="18" y="350">
+                Form
+              </text>
+
+              {[chartScaleMax, Math.round(chartScaleMax / 2), 0].map((value) => (
+                <text className="chartTick" key={value} x="42" y={loadY(value) + 4} textAnchor="end">
+                  {value}
+                </text>
               ))}
-            </div>
-          </div>
 
-          <div className="formChart">
-            <div className="formChartLabel">
-              <strong>Form</strong>
-              <span>Fresh</span>
-              <span>Fatigued</span>
-            </div>
-            <div className="formChartPlot">
-              <div className="formZeroLine"><span>0</span></div>
+              <rect className="formZone formZoneTransition" x={loadChartLeft} y={formY(formScaleMax)} width={loadChartRight - loadChartLeft} height={Math.max(0, formY(20) - formY(formScaleMax))} />
+              <rect className="formZone formZoneFresh" x={loadChartLeft} y={formY(20)} width={loadChartRight - loadChartLeft} height={Math.max(0, formY(5) - formY(20))} />
+              <rect className="formZone formZoneGrey" x={loadChartLeft} y={formY(5)} width={loadChartRight - loadChartLeft} height={Math.max(0, formY(-10) - formY(5))} />
+              <rect className="formZone formZoneOptimal" x={loadChartLeft} y={formY(-10)} width={loadChartRight - loadChartLeft} height={Math.max(0, formY(-30) - formY(-10))} />
+              <rect className="formZone formZoneRisk" x={loadChartLeft} y={formY(-30)} width={loadChartRight - loadChartLeft} height={Math.max(0, formY(formScaleMin) - formY(-30))} />
+              <line className="formZero" x1={loadChartLeft} x2={loadChartRight} y1={formY(0)} y2={formY(0)} />
+              <polyline className="formTrendLine" points={formLinePoints} />
+
               {fitnessTimeline.map((point, index) => (
-                <span
-                  className={`formPoint${point.form >= 0 ? " formPointFresh" : " formPointFatigued"}`}
-                  key={point.date}
-                  style={{
-                    left: `${((index + 0.5) / fitnessTimeline.length) * 100}%`,
-                    top: `${50 - (point.form / maxAbsoluteForm) * 42}%`,
-                  }}
-                  title={`${getShortDateLabel(point.date)} form: ${point.form}`}
-                />
+                <g key={point.date}>
+                  <circle className="fitnessDot" cx={chartX(index)} cy={loadY(point.chronicLoad)} r="3" />
+                  <circle className="fatigueDot" cx={chartX(index)} cy={loadY(point.acuteLoad)} r="3" />
+                  <circle className="formDot" cx={chartX(index)} cy={formY(point.form)} r="3" />
+                  <text className="chartDate" x={chartX(index)} y="425" textAnchor="middle">
+                    {index % 2 === 0 || index === fitnessTimeline.length - 1
+                      ? getShortDateLabel(point.date)
+                      : ""}
+                  </text>
+                </g>
               ))}
-            </div>
+
+              <g className="chartCurrent">
+                <text x="990" y="54">Latest</text>
+                <text className="currentFitness" x="990" y="88">Fitness {latestTimelinePoint?.chronicLoad ?? 0}</text>
+                <text className="currentFatigue" x="990" y="116">Fatigue {latestTimelinePoint?.acuteLoad ?? 0}</text>
+                <text className="currentForm" x="990" y="144">Form {latestTimelinePoint?.form ?? 0}</text>
+                <text className="zoneTransitionLabel" x="970" y={formY(20) - 4}>Transition</text>
+                <text className="zoneFreshLabel" x="970" y={formY(10)}>Fresh</text>
+                <text className="zoneGreyLabel" x="970" y={formY(-2)}>Grey zone</text>
+                <text className="zoneOptimalLabel" x="970" y={formY(-18)}>Optimal</text>
+                <text className="zoneRiskLabel" x="970" y={formY(-30) + 15}>High risk</text>
+              </g>
+            </svg>
           </div>
 
           <div className="chartLegend">
-            <span><i className="legendFitness" /> Fitness load points</span>
-            <span><i className="legendFatigue" /> Fatigue load points</span>
-            <span><i className="legendFormFresh" /> Positive form = fresher</span>
-            <span><i className="legendFormFatigued" /> Negative form = more fatigued</span>
+            <span><i className="legendFitness" /> Fitness: 6-week training base</span>
+            <span><i className="legendFatigue" /> Fatigue: latest 7-day load</span>
+            <span><i className="legendFormFresh" /> Form: fitness minus fatigue</span>
           </div>
         </section>
         )}
