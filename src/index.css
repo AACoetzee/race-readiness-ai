@@ -1687,7 +1687,7 @@ h3 {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-x: auto;
+  overflow: hidden;
 }
 
 .fitnessChartCard {
@@ -1697,8 +1697,12 @@ h3 {
 .fitnessLineChart svg {
   display: block;
   width: 100%;
-  min-width: 760px;
+  min-width: 0;
   height: auto;
+}
+
+.fitnessPageGrid {
+  grid-template-columns: 1fr;
 }
 
 .chartGrid line {

@@ -61,7 +61,13 @@ const KILOMETERS_PER_MILE = 1.609344;
 // A union type is a short list of the only allowed string values.
 // TypeScript will warn us if we accidentally use an unknown page name.
 type PageView = "dashboard" | "trainingPlan" | "activityDetail";
-type DashboardView = "overview" | "calendar" | "activities" | "zones" | "coach";
+type DashboardView =
+  | "overview"
+  | "fitness"
+  | "calendar"
+  | "activities"
+  | "zones"
+  | "coach";
 type DistanceUnit = "mi" | "km";
 
 function getStorage() {
@@ -2357,6 +2363,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
       <nav className="dashboardTabs" aria-label="Dashboard sections">
         {[
           ["overview", "Overview"],
+          ["fitness", "Fitness"],
           ["calendar", "Calendar"],
           ["activities", "Activities"],
           ["zones", "Zones"],
@@ -2508,9 +2515,9 @@ const planIntakeModal = isPlanIntakeOpen ? (
         </>
       )}
 
-      {(dashboardView === "overview" || dashboardView === "coach") && (
-      <section className="analyticsGrid">
-        {dashboardView === "overview" && (
+      {(dashboardView === "fitness" || dashboardView === "coach") && (
+      <section className={`analyticsGrid${dashboardView === "fitness" ? " fitnessPageGrid" : ""}`}>
+        {dashboardView === "fitness" && (
         <section className="card fitnessChartCard">
           <div className="sectionHeader">
             <div>
