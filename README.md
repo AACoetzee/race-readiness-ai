@@ -57,7 +57,7 @@ The dashboard shows:
 - Weekly distance
 - Longest run
 - Runs this week
-- Fitness, fatigue, form, ramp rate, and training status
+- Exponentially weighted 42-day fitness, 7-day fatigue, form, ramp rate, and training status
 - Fitness score
 - Current race capability
 - A 14-week connected fitness/fatigue/form chart
@@ -166,7 +166,7 @@ Strava or imported JSON
 `src/utils/fitnessCalculations.ts` contains deterministic calculations. These calculations run without AI and include:
 
 - Fitness score
-- Training load, fatigue, fitness, form, and ramp rate
+- Training load using 42-day fitness and 7-day fatigue exponential curves, plus form and ramp rate
 - Race-time predictions using recent race-tagged performances
 - Fourteen-week fitness, fatigue, and form history
 

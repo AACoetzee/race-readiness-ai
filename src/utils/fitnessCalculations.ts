@@ -14,6 +14,10 @@ export type TrainingLoadTimelinePoint = TrainingLoadMetrics & {
   totalMiles: number;
 };
 
+type DailyTrainingLoadPoint = TrainingLoadMetrics & {
+  date: string;
+};
+
 export type RacePredictions = {
   fiveK: string;
   tenK: string;
@@ -496,17 +500,10 @@ export function calculateTrainingLoad(runs: Run[]) {
   return "Low";
 }
 
-export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
-  // Acute load = recent fatigue. Chronic load = longer baseline fitness.
-  // Comparing them answers: "Was this week much harder or easier than normal?"
-  const acuteRuns = getWindowRuns(runs, 7);
-  const chronicRuns = getWindowRuns(runs, 42);
-  const acuteLoad = acuteRuns.reduce(
-    (sum, run) => sum + calculateRunTrainingStress(run),
-    0
-  );
-  const chronicLoad =
-    chronicRuns.reduce((sum, run) => sum + calculateRunTrainingStress(run), 0) / 6;
+function getTrainingLoadStatus(
+  acuteLoad: number,
+  chronicLoad: number
+): TrainingLoadMetrics {
   const roundedAcuteLoad = Math.round(acuteLoad);
   const roundedChronicLoad = Math.round(chronicLoad);
   const form = Math.round(chronicLoad - acuteLoad);
@@ -515,7 +512,7 @@ export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
   let status: TrainingLoadMetrics["status"] = "Low";
   let explanation = "There is not enough recent training load to judge a trend yet.";
 
-  if (roundedChronicLoad >= 10) {
+  if (roundedChronicLoad >= 5) {
     if (rampRate > 35) {
       status = "Overreaching";
       explanation =
@@ -545,6 +542,83 @@ export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
   };
 }
 
+function calculateDailyTrainingLoad(runs: Run[]): DailyTrainingLoadPoint[] {
+  if (runs.length === 0) {
+    return [];
+  }
+
+  /*
+   * Fitness/fatigue model:
+   * - Fatigue reacts quickly using a 7-day exponential time constant.
+   * - Fitness reacts slowly using a 42-day exponential time constant.
+   * - Form is fitness minus fatigue.
+   *
+   * Run stress is multiplied by seven so the displayed load-point scale stays
+   * comparable to the app's earlier weekly-load numbers.
+   */
+  const millisecondsPerDay = 1000 * 60 * 60 * 24;
+  const firstRunTime = Math.min(...runs.map(getRunTimeMs));
+  const latestRunTime = Math.max(...runs.map(getRunTimeMs));
+  const dailyStress = new Map<string, number>();
+
+  runs.forEach((run) => {
+    const date = formatDateForPoint(new Date(getRunTimeMs(run)));
+    dailyStress.set(
+      date,
+      (dailyStress.get(date) ?? 0) + calculateRunTrainingStress(run) * 7
+    );
+  });
+
+  const fatigueDecay = Math.exp(-1 / 7);
+  const fitnessDecay = Math.exp(-1 / 42);
+  let fatigue = 0;
+  let fitness = 0;
+  const timeline: DailyTrainingLoadPoint[] = [];
+
+  for (
+    let dateTime = firstRunTime;
+    dateTime <= latestRunTime;
+    dateTime += millisecondsPerDay
+  ) {
+    const date = formatDateForPoint(new Date(dateTime));
+    const stress = dailyStress.get(date) ?? 0;
+
+    fatigue = fatigue * fatigueDecay + stress * (1 - fatigueDecay);
+    fitness = fitness * fitnessDecay + stress * (1 - fitnessDecay);
+
+    timeline.push({
+      date,
+      ...getTrainingLoadStatus(fatigue, fitness),
+    });
+  }
+
+  return timeline;
+}
+
+export function calculateTrainingLoadMetrics(runs: Run[]): TrainingLoadMetrics {
+  const latestPoint = calculateDailyTrainingLoad(runs).at(-1);
+
+  if (!latestPoint) {
+    return {
+      acuteLoad: 0,
+      chronicLoad: 0,
+      form: 0,
+      rampRate: 0,
+      status: "Low",
+      explanation: "There is not enough recent training load to judge a trend yet.",
+    };
+  }
+
+  return {
+    acuteLoad: latestPoint.acuteLoad,
+    chronicLoad: latestPoint.chronicLoad,
+    form: latestPoint.form,
+    rampRate: latestPoint.rampRate,
+    status: latestPoint.status,
+    explanation: latestPoint.explanation,
+  };
+}
+
 export function calculateTrainingLoadTimeline(
   runs: Run[],
   numberOfWeeks = 8
@@ -553,21 +627,33 @@ export function calculateTrainingLoadTimeline(
     return [];
   }
 
+  const dailyTimeline = calculateDailyTrainingLoad(runs);
   const latestRunTime = Math.max(...runs.map(getRunTimeMs));
   const millisecondsPerDay = 1000 * 60 * 60 * 24;
+  const timelineStart =
+    latestRunTime - (numberOfWeeks * 7 - 1) * millisecondsPerDay;
 
-  // Build one weekly snapshot per chart column, moving from oldest to newest.
-  return Array.from({ length: numberOfWeeks }, (_, index) => {
-    const weeksBack = numberOfWeeks - 1 - index;
-    const pointDate = new Date(latestRunTime - weeksBack * 7 * millisecondsPerDay);
-    const pointDateString = formatDateForPoint(pointDate);
-    const pointRuns = runs.filter((run) => getRunTimeMs(run) <= pointDate.getTime());
-    const recentRuns = getWindowRuns(pointRuns, 7);
+  // Keep daily points so taper-driven freshness changes are not averaged away.
+  return dailyTimeline
+    .filter(
+      (point) => new Date(`${point.date}T00:00:00`).getTime() >= timelineStart
+    )
+    .map((point) => {
+      const pointDate = new Date(`${point.date}T00:00:00`);
+      const pointRuns = runs.filter(
+        (run) => getRunTimeMs(run) <= pointDate.getTime()
+      );
+      const recentRuns = getWindowRuns(pointRuns, 7);
 
-    return {
-      date: pointDateString,
-      totalMiles: Number(calculateTotalMiles(recentRuns).toFixed(1)),
-      ...calculateTrainingLoadMetrics(pointRuns),
-    };
-  });
+      return {
+        date: point.date,
+        totalMiles: Number(calculateTotalMiles(recentRuns).toFixed(1)),
+        acuteLoad: point.acuteLoad,
+        chronicLoad: point.chronicLoad,
+        form: point.form,
+        rampRate: point.rampRate,
+        status: point.status,
+        explanation: point.explanation,
+      };
+    });
 }

@@ -886,7 +886,7 @@ const planBaselineWeeklyMiles = Math.max(
   trendAverageWeeklyMiles,
   recentAverageWeeklyMiles
 );
-const fitnessTimeline = calculateTrainingLoadTimeline(trendRuns, 14);
+const fitnessTimeline = calculateTrainingLoadTimeline(runs, 14);
 const plannedWorkouts = getPlannedWorkouts(trainingPlan, currentDate, planPreferences);
 const calendarDays = getCalendarDays(runs, plannedWorkouts, calendarReferenceDate);
 const calendarMonthLabel = getCalendarMonthLabel(calendarReferenceDate);
@@ -946,7 +946,7 @@ const currentRaceCapabilities = isPastRaceTimeValid
 
 const fitnessBreakdown = calculateFitnessBreakdown(trainingRuns);
 const trainingLoad = calculateTrainingLoad(trainingRuns);
-const trainingLoadMetrics = calculateTrainingLoadMetrics(trendRuns);
+const trainingLoadMetrics = calculateTrainingLoadMetrics(runs);
 
 const selectedGoalTime = currentRaceCapabilities
   // Pick the prediction that matches the race selected by the user.
@@ -2456,9 +2456,8 @@ const planIntakeModal = isPlanIntakeOpen ? (
             <p className="eyebrow">Training Load</p>
             <h2>Fitness, fatigue, and form</h2>
             <p>
-              This compares your last 7 days against your 6-week baseline using
-              distance, effort, and heart rate when available. These are relative
-              load points, not scores out of 100.
+              This uses a fast 7-day fatigue curve and a slower 42-day fitness
+              curve. These are relative load points, not scores out of 100.
             </p>
           </div>
 
@@ -2474,8 +2473,8 @@ const planIntakeModal = isPlanIntakeOpen ? (
               <div className="loadHelpPopup">
                 <strong>How this is calculated</strong>
                 <p><b>Run load</b> = distance × effort multiplier × heart-rate multiplier.</p>
-                <p><b>Fatigue</b> = total run load from the latest 7 days.</p>
-                <p><b>Fitness</b> = average weekly run load across 6 weeks.</p>
+                <p><b>Fatigue</b> = exponentially weighted recent load with a 7-day time constant.</p>
+                <p><b>Fitness</b> = exponentially weighted training base with a 42-day time constant.</p>
                 <p><b>Form</b> = fitness − fatigue.</p>
                 <p><b>Ramp</b> = percentage difference between fatigue and fitness.</p>
                 <small>Load points are relative to your own training, not out of 100.</small>
@@ -2488,13 +2487,13 @@ const planIntakeModal = isPlanIntakeOpen ? (
           <div>
             <span>Fatigue</span>
             <strong>{trainingLoadMetrics.acuteLoad}</strong>
-            <p>Load points from last 7 days</p>
+            <p>Fast-moving 7-day load curve</p>
           </div>
 
           <div>
             <span>Fitness</span>
             <strong>{trainingLoadMetrics.chronicLoad}</strong>
-            <p>Average weekly load points over 6 weeks</p>
+            <p>Slow-moving 42-day load curve</p>
           </div>
 
           <div>
@@ -2570,11 +2569,14 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
               {fitnessTimeline.map((point, index) => (
                 <g key={point.date}>
+                  <title>
+                    {`${point.date}: Fitness ${point.chronicLoad}, Fatigue ${point.acuteLoad}, Form ${point.form}`}
+                  </title>
                   <circle className="fitnessDot" cx={chartX(index)} cy={loadY(point.chronicLoad)} r="3" />
                   <circle className="fatigueDot" cx={chartX(index)} cy={loadY(point.acuteLoad)} r="3" />
                   <circle className="formDot" cx={chartX(index)} cy={formY(point.form)} r="3" />
                   <text className="chartDate" x={chartX(index)} y="425" textAnchor="middle">
-                    {index % 2 === 0 || index === fitnessTimeline.length - 1
+                    {index % 14 === 0 || index === fitnessTimeline.length - 1
                       ? getShortDateLabel(point.date)
                       : ""}
                   </text>
@@ -2596,8 +2598,8 @@ const planIntakeModal = isPlanIntakeOpen ? (
           </div>
 
           <div className="chartLegend">
-            <span><i className="legendFitness" /> Fitness: 6-week training base</span>
-            <span><i className="legendFatigue" /> Fatigue: latest 7-day load</span>
+            <span><i className="legendFitness" /> Fitness: 42-day exponential training base</span>
+            <span><i className="legendFatigue" /> Fatigue: 7-day exponential recent load</span>
             <span><i className="legendFormFresh" /> Form: fitness minus fatigue</span>
           </div>
         </section>

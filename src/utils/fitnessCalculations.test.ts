@@ -249,25 +249,66 @@ describe("fitness calculations", () => {
       },
     ];
 
-    expect(calculateTrainingLoadMetrics(runs)).toEqual({
-      acuteLoad: 25,
-      chronicLoad: 13,
-      form: -12,
-      rampRate: 100,
-      status: "Overreaching",
-      explanation:
-        "Your last 7 days are much heavier than your 6-week baseline, so fatigue risk is elevated.",
+    const metrics = calculateTrainingLoadMetrics(runs);
+
+    expect(metrics.acuteLoad).toBeGreaterThan(metrics.chronicLoad);
+    expect(metrics.form).toBeLessThan(0);
+    expect(metrics.status).toBe("Overreaching");
+  });
+
+  it("builds a daily training load timeline", () => {
+    const timeline = calculateTrainingLoadTimeline(baseRuns, 3);
+
+    expect(timeline).toHaveLength(7);
+    expect(timeline.at(-1)).toMatchObject({
+      date: "2026-05-07",
+      totalMiles: 38,
+      acuteLoad: 30,
     });
   });
 
-  it("builds a weekly training load timeline", () => {
-    const timeline = calculateTrainingLoadTimeline(baseRuns, 3);
+  it("shows positive form after a taper because fatigue falls faster than fitness", () => {
+    const trainingBlock: Run[] = Array.from({ length: 8 }, (_, week) => {
+      const date = new Date(Date.UTC(2026, 2, 1 + week * 7))
+        .toISOString()
+        .slice(0, 10);
 
-    expect(timeline).toHaveLength(3);
-    expect(timeline[2]).toMatchObject({
-      date: "2026-05-07",
-      totalMiles: 38,
-      acuteLoad: 43,
+      return {
+        date,
+        type: "Long Run",
+        distanceMiles: 12,
+        pace: "8:00 /mi",
+        effort: "Moderate" as const,
+      };
     });
+    const finalBuildRun: Run = {
+      date: "2026-04-19",
+      type: "Workout",
+      distanceMiles: 10,
+      pace: "7:20 /mi",
+      effort: "Hard",
+    };
+    const raceWeekShakeout: Run = {
+      date: "2026-05-01",
+      type: "Shakeout",
+      distanceMiles: 2,
+      pace: "9:00 /mi",
+      effort: "Easy",
+    };
+
+    const buildMetrics = calculateTrainingLoadMetrics([
+      ...trainingBlock,
+      finalBuildRun,
+    ]);
+    const taperedMetrics = calculateTrainingLoadMetrics([
+      ...trainingBlock,
+      finalBuildRun,
+      raceWeekShakeout,
+    ]);
+
+    expect(taperedMetrics.acuteLoad).toBeLessThan(buildMetrics.acuteLoad);
+    expect(taperedMetrics.chronicLoad).toBeGreaterThan(taperedMetrics.acuteLoad);
+    expect(taperedMetrics.form).toBeGreaterThan(0);
+    expect(taperedMetrics.status).toBe("Fresh");
   });
 });
