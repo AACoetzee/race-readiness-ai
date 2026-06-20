@@ -186,8 +186,9 @@ Important backend routes:
 | Route | Purpose |
 | --- | --- |
 | `GET /api/strava/connect` | Starts Strava authorization |
-| `GET /api/strava/callback` | Completes Strava authorization |
-| `GET /api/strava/runs` | Imports and normalizes Strava runs |
+| `GET /api/strava/callback` | Completes Strava authorization and saves the connected athlete locally |
+| `GET /api/strava/athletes` | Lists locally connected Strava athletes without exposing tokens |
+| `GET /api/strava/runs` | Imports and normalizes Strava runs for the selected athlete |
 | `POST /api/ai-summary` | Generates the overall fitness summary |
 | `POST /api/activity-insight` | Analyzes one selected activity |
 | `POST /api/coach-check-in` | Generates a weekly coaching check-in |
@@ -255,7 +256,7 @@ Create a file called `.env` in the main project folder and add your API credenti
 OPENAI_API_KEY=your_api_key_here
 STRAVA_CLIENT_ID=your_client_id
 STRAVA_CLIENT_SECRET=your_client_secret
-STRAVA_REFRESH_TOKEN=your_refresh_token
+STRAVA_REDIRECT_URI=http://localhost:3001/api/strava/callback
 ```
 
 Do not commit this file to GitHub.
@@ -322,14 +323,61 @@ Create a `.env` file:
 OPENAI_API_KEY=your_api_key_here
 STRAVA_CLIENT_ID=your_client_id
 STRAVA_CLIENT_SECRET=your_client_secret
-STRAVA_REFRESH_TOKEN=your_refresh_token
+STRAVA_REDIRECT_URI=http://localhost:3001/api/strava/callback
 ```
+
+Athletes connect from inside the app with **Connect Athlete**. Connected athlete tokens are stored locally in `.strava-athletes.json`, which is ignored by Git.
 
 Important:
 
 - Never commit `.env`
+- Never commit `.strava-athletes.json`
 - Never put API keys directly in frontend code
 - Keep secrets on the backend only
+
+## Importing Another Strava Athlete
+
+Each athlete must approve access through Strava.
+
+1. Start the backend with `npm run server`.
+2. Start the frontend with `npm run dev`.
+3. In the app, click **Connect Athlete**.
+4. Have the athlete log in to Strava and approve activity access.
+5. Return to Race Readiness and click **Refresh Athletes**.
+6. Pick the athlete from the dropdown.
+7. Click **Import Strava**.
+
+The app imports the selected athlete's runs without asking for their Strava password.
+
+## Deployment Notes
+
+To deploy this as a login-based Strava app, host both pieces:
+
+- The Express backend, which owns Strava/OpenAI secrets and OAuth callbacks.
+- The built React frontend, which is served by the Express backend in production.
+
+Suggested production commands:
+
+```bash
+npm install
+npm run build
+npm start
+```
+
+Production environment variables:
+
+```bash
+OPENAI_API_KEY=your_api_key_here
+STRAVA_CLIENT_ID=your_client_id
+STRAVA_CLIENT_SECRET=your_client_secret
+STRAVA_REDIRECT_URI=https://your-app-domain.com/api/strava/callback
+CLIENT_ORIGIN=https://your-app-domain.com
+VITE_API_BASE_URL=
+```
+
+In the Strava developer dashboard, set the authorization callback domain to your deployed app domain. The callback route must match `STRAVA_REDIRECT_URI`.
+
+For a real public deployment, replace `.strava-athletes.json` with a database or a persistent disk. Refresh tokens must survive server restarts and must not be committed to GitHub.
 
 ## Current Limitations
 

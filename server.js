@@ -2,6 +2,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import OpenAI from "openai";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 dotenv.config();
 
@@ -17,6 +20,7 @@ dotenv.config();
  */
 
 const app = express();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3001;
 const AI_MODEL = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 const STRAVA_AUTH_URL = "https://www.strava.com/oauth/authorize";
@@ -25,6 +29,9 @@ const STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 const STRAVA_REDIRECT_URI =
   process.env.STRAVA_REDIRECT_URI ||
   `http://localhost:${PORT}/api/strava/callback`;
+const STRAVA_ATHLETES_FILE =
+  process.env.STRAVA_ATHLETES_FILE ||
+  path.join(process.cwd(), ".strava-athletes.json");
 const allowedOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim())
@@ -325,18 +332,6 @@ function mapStravaActivityToRun(activity, observedMaxHeartRate) {
   };
 }
 
-function validateStravaConfig() {
-  const missing = [
-    ["STRAVA_CLIENT_ID", process.env.STRAVA_CLIENT_ID],
-    ["STRAVA_CLIENT_SECRET", process.env.STRAVA_CLIENT_SECRET],
-    ["STRAVA_REFRESH_TOKEN", process.env.STRAVA_REFRESH_TOKEN],
-  ]
-    .filter(([, value]) => !value)
-    .map(([name]) => name);
-
-  return missing;
-}
-
 function validateStravaOAuthConfig() {
   const missing = [
     ["STRAVA_CLIENT_ID", process.env.STRAVA_CLIENT_ID],
@@ -346,6 +341,85 @@ function validateStravaOAuthConfig() {
     .map(([name]) => name);
 
   return missing;
+}
+
+function normalizeStravaAthlete(tokenData) {
+  const athlete = tokenData.athlete || {};
+  const athleteId = Number(athlete.id);
+
+  if (!Number.isFinite(athleteId)) {
+    throw new Error("Strava did not return an athlete id.");
+  }
+
+  return {
+    id: athleteId,
+    name: [athlete.firstname, athlete.lastname].filter(Boolean).join(" ") || `Athlete ${athleteId}`,
+    username: athlete.username || "",
+    city: athlete.city || "",
+    country: athlete.country || "",
+    refreshToken: tokenData.refresh_token,
+    scope: tokenData.scope || "",
+    connectedAt: new Date().toISOString(),
+  };
+}
+
+function publicAthleteProfile(athlete) {
+  return {
+    id: athlete.id,
+    name: athlete.name,
+    username: athlete.username,
+    city: athlete.city,
+    country: athlete.country,
+    scope: athlete.scope,
+    connectedAt: athlete.connectedAt,
+  };
+}
+
+async function readStravaAthletes() {
+  try {
+    const file = await fs.readFile(STRAVA_ATHLETES_FILE, "utf8");
+    const athletes = JSON.parse(file);
+
+    return Array.isArray(athletes) ? athletes : [];
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+async function saveStravaAthlete(athlete) {
+  const athletes = await readStravaAthletes();
+  const withoutCurrentAthlete = athletes.filter((item) => item.id !== athlete.id);
+  const nextAthletes = [...withoutCurrentAthlete, athlete].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+
+  await fs.writeFile(
+    STRAVA_ATHLETES_FILE,
+    `${JSON.stringify(nextAthletes, null, 2)}\n`
+  );
+
+  return nextAthletes;
+}
+
+async function getStravaRefreshTokenForRequest(req) {
+  const athleteId = Number(req.query.athleteId);
+
+  if (Number.isFinite(athleteId)) {
+    const athletes = await readStravaAthletes();
+    const athlete = athletes.find((item) => item.id === athleteId);
+
+    if (!athlete) {
+      throw new Error("That connected Strava athlete was not found.");
+    }
+
+    return athlete.refreshToken;
+  }
+
+  throw new Error("Connect a Strava athlete before importing runs.");
 }
 
 function escapeHtml(value) {
@@ -524,7 +598,7 @@ function normalizeAiSummary(summary, context) {
   };
 }
 
-async function getStravaAccessToken() {
+async function getStravaAccessToken(refreshToken) {
   const response = await fetch(STRAVA_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -533,7 +607,7 @@ async function getStravaAccessToken() {
     body: JSON.stringify({
       client_id: process.env.STRAVA_CLIENT_ID,
       client_secret: process.env.STRAVA_CLIENT_SECRET,
-      refresh_token: process.env.STRAVA_REFRESH_TOKEN,
+      refresh_token: refreshToken,
       grant_type: "refresh_token",
     }),
   });
@@ -1152,7 +1226,7 @@ app.get("/api/strava/connect", (_req, res) => {
 
 app.get("/api/strava/callback", async (req, res) => {
   // Strava redirects here after approval. We exchange the one-time code for
-  // tokens and show the refresh token that belongs in the local .env file.
+  // tokens and save the connected athlete locally for future imports.
   const code = req.query.code;
 
   if (!isNonEmptyString(code)) {
@@ -1162,9 +1236,10 @@ app.get("/api/strava/callback", async (req, res) => {
 
   try {
     const tokenData = await exchangeStravaCodeForTokens(code);
-    const refreshToken = escapeHtml(tokenData.refresh_token);
+    const athlete = normalizeStravaAthlete(tokenData);
+    await saveStravaAthlete(athlete);
+    const athleteName = escapeHtml(athlete.name);
     const scope = escapeHtml(tokenData.scope || "Scope was not returned.");
-    const envLine = escapeHtml(`STRAVA_REFRESH_TOKEN=${tokenData.refresh_token}`);
 
     res.send(`
       <!doctype html>
@@ -1194,11 +1269,10 @@ app.get("/api/strava/callback", async (req, res) => {
         </head>
         <body>
           <h1>Strava connected</h1>
-          <p>Copy this full line into your local <strong>.env</strong> file, replacing the old <strong>STRAVA_REFRESH_TOKEN</strong> line.</p>
-          <code>${envLine}</code>
+          <p><strong>${athleteName}</strong> was saved as a connected athlete.</p>
           <p>Scope: ${scope}</p>
           <p>The scope must include <strong>activity:read</strong> or <strong>activity:read_all</strong>. If it does not, approve the Strava screen again and make sure activity access is checked.</p>
-          <p>After saving <strong>.env</strong>, restart the backend server.</p>
+          <p>You can close this tab and return to Race Readiness.</p>
         </body>
       </html>
     `);
@@ -1208,9 +1282,23 @@ app.get("/api/strava/callback", async (req, res) => {
   }
 });
 
+app.get("/api/strava/athletes", async (_req, res) => {
+  try {
+    const athletes = await readStravaAthletes();
+
+    res.json({ athletes: athletes.map(publicAthleteProfile) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: "Could not read connected Strava athletes.",
+      athletes: [],
+    });
+  }
+});
+
 app.get("/api/strava/runs", async (req, res) => {
   // This is the route called by the frontend's "Import Strava" button.
-  const missingConfig = validateStravaConfig();
+  const missingConfig = validateStravaOAuthConfig();
 
   if (missingConfig.length > 0) {
     res.status(503).json({
@@ -1224,7 +1312,8 @@ app.get("/api/strava/runs", async (req, res) => {
   const safePerPage = Math.min(Math.max(perPage, 1), 100);
 
   try {
-    const accessToken = await getStravaAccessToken();
+    const refreshToken = await getStravaRefreshTokenForRequest(req);
+    const accessToken = await getStravaAccessToken(refreshToken);
     const activities = await getStravaActivities(accessToken, safePerPage);
     const runActivities = activities
       .filter((activity) => activity.type === "Run" || activity.sport_type === "Run")
@@ -1706,6 +1795,14 @@ app.use((error, _req, res, _next) => {
   sendFallbackSummary(res, 400, {
     summary: "The request could not be processed.",
   });
+});
+
+const clientBuildPath = path.join(__dirname, "dist");
+
+app.use(express.static(clientBuildPath));
+
+app.use((_req, res) => {
+  res.sendFile(path.join(clientBuildPath, "index.html"));
 });
 
 app.listen(PORT, () => {

@@ -47,6 +47,8 @@ const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
 const COACH_CHECK_IN_URL = `${API_BASE_URL}/api/coach-check-in`;
 const ACTIVITY_INSIGHT_URL = `${API_BASE_URL}/api/activity-insight`;
 const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
+const STRAVA_CONNECT_URL = `${API_BASE_URL}/api/strava/connect`;
+const STRAVA_ATHLETES_URL = `${API_BASE_URL}/api/strava/athletes`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
 const TREND_WINDOW_DAYS = 90;
@@ -150,6 +152,16 @@ type PlannedWorkout = {
   type: "Long run" | "Workout" | "Easy";
   miles: number;
   week: number;
+};
+
+type ConnectedStravaAthlete = {
+  id: number;
+  name: string;
+  username: string;
+  city: string;
+  country: string;
+  scope: string;
+  connectedAt: string;
 };
 
 function isRun(value: unknown): value is Run {
@@ -741,6 +753,9 @@ const [runs, setRuns] = useState<Run[]>(() => {
   }
 });
 const [showAllRuns, setShowAllRuns] = useState(false);
+const [hoveredFitnessPoint, setHoveredFitnessPoint] = useState<number | null>(null);
+const [connectedStravaAthletes, setConnectedStravaAthletes] = useState<ConnectedStravaAthlete[]>([]);
+const [selectedStravaAthleteId, setSelectedStravaAthleteId] = useState("");
 const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() =>
   getStorage()?.getItem(SAVED_DISTANCE_UNIT_KEY) === "km" ? "km" : "mi"
 );
@@ -927,6 +942,12 @@ const formLinePoints = fitnessTimeline
   .map((point, index) => `${chartX(index)},${formY(point.form)}`)
   .join(" ");
 const latestTimelinePoint = fitnessTimeline.at(-1);
+const hoveredFitnessData =
+  hoveredFitnessPoint === null ? null : fitnessTimeline[hoveredFitnessPoint] ?? null;
+const hoveredFitnessX =
+  hoveredFitnessPoint === null ? 0 : chartX(hoveredFitnessPoint);
+const tooltipX = Math.min(Math.max(hoveredFitnessX - 74, loadChartLeft), loadChartRight - 148);
+const tooltipY = Math.max(30, hoveredFitnessData ? loadY(hoveredFitnessData.acuteLoad) - 96 : 30);
 
 const racePredictions = isPastRaceTimeValid
   ? calculateRacePredictionsFromHistory(
@@ -1024,6 +1045,50 @@ const [coachInsight, setCoachInsight] = useState<CoachInsight | null>(null);
 const [activityInsights, setActivityInsights] = useState<Record<string, ActivityInsight>>({});
 const [isLoadingActivityInsight, setIsLoadingActivityInsight] = useState(false);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
+
+async function loadConnectedStravaAthletes() {
+  try {
+    const response = await fetch(STRAVA_ATHLETES_URL);
+    const data = await response.json();
+
+    if (!response.ok || !Array.isArray(data.athletes)) {
+      throw new Error(data.error || "Could not load connected Strava athletes.");
+    }
+
+    setConnectedStravaAthletes(data.athletes);
+
+    if (!selectedStravaAthleteId && data.athletes.length > 0) {
+      setSelectedStravaAthleteId(String(data.athletes[0].id));
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+useEffect(() => {
+  let ignoreResult = false;
+
+  fetch(STRAVA_ATHLETES_URL)
+    .then((response) => response.json().then((data) => ({ data, ok: response.ok })))
+    .then(({ data, ok }) => {
+      if (ignoreResult || !ok || !Array.isArray(data.athletes)) {
+        return;
+      }
+
+      setConnectedStravaAthletes(data.athletes);
+
+      if (data.athletes.length > 0) {
+        setSelectedStravaAthleteId(String(data.athletes[0].id));
+      }
+    })
+    .catch((error) => {
+      console.error(error);
+    });
+
+  return () => {
+    ignoreResult = true;
+  };
+}, []);
 
 useEffect(() => {
   getStorage()?.setItem(SAVED_DISTANCE_UNIT_KEY, distanceUnit);
@@ -1154,6 +1219,10 @@ function handleImportDataClick() {
   importInputRef.current?.click();
 }
 
+function handleConnectStravaAthlete() {
+  window.location.href = STRAVA_CONNECT_URL;
+}
+
 async function handleImportStravaRuns() {
   // Frontend API pattern:
   // 1. Show a loading state.
@@ -1162,10 +1231,23 @@ async function handleImportStravaRuns() {
   // 4. Put valid data into React state.
   // 5. Always turn loading off in `finally`.
   setIsImportingStrava(true);
-  setActionMessage("Importing runs from Strava...");
+  const selectedAthlete = connectedStravaAthletes.find(
+    (athlete) => String(athlete.id) === selectedStravaAthleteId
+  );
+  const params = new URLSearchParams({ per_page: "100" });
+
+  if (selectedAthlete) {
+    params.set("athleteId", String(selectedAthlete.id));
+  }
+
+  setActionMessage(
+    selectedAthlete
+      ? `Importing runs from ${selectedAthlete.name}'s Strava...`
+      : "Importing runs from Strava..."
+  );
 
   try {
-    const response = await fetch(`${STRAVA_RUNS_URL}?per_page=100`);
+    const response = await fetch(`${STRAVA_RUNS_URL}?${params}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -1185,8 +1267,8 @@ async function handleImportStravaRuns() {
     clearAiSummary();
     setActionMessage(
       importedRace
-        ? `Imported ${data.runs.length} runs from Strava and detected ${importedRace.type} from its race tag.`
-        : `Imported ${data.runs.length} runs from Strava. No race-tagged activity was found.`
+        ? `Imported ${data.runs.length} runs from ${selectedAthlete?.name ?? "Strava"} and detected ${importedRace.type} from its race tag.`
+        : `Imported ${data.runs.length} runs from ${selectedAthlete?.name ?? "Strava"}. No race-tagged activity was found.`
     );
   } catch (error) {
     console.error(error);
@@ -2323,6 +2405,32 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
   <div className="topBarActions">
     {unitToggle}
+    <div className="stravaAthleteControls" aria-label="Connected Strava athlete">
+      <label>
+        <span>Strava athlete</span>
+        <select
+          value={selectedStravaAthleteId}
+          onChange={(event) => setSelectedStravaAthleteId(event.target.value)}
+        >
+          {connectedStravaAthletes.length === 0 && (
+            <option value="">Connect an athlete first</option>
+          )}
+          {connectedStravaAthletes.map((athlete) => (
+            <option key={athlete.id} value={athlete.id}>
+              {athlete.name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <button className="secondaryButton" type="button" onClick={() => void loadConnectedStravaAthletes()}>
+        Refresh Athletes
+      </button>
+
+      <button className="secondaryButton" type="button" onClick={handleConnectStravaAthlete}>
+        Connect Athlete
+      </button>
+    </div>
     <div className="buttonRow">
       <button className="secondaryButton" onClick={handleImportDataClick}>
         Import Data
@@ -2330,7 +2438,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
       <button
         className="secondaryButton"
         onClick={handleImportStravaRuns}
-        disabled={isImportingStrava}
+        disabled={isImportingStrava || connectedStravaAthletes.length === 0}
       >
         {isImportingStrava ? "Importing..." : "Import Strava"}
       </button>
@@ -2569,9 +2677,6 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
               {fitnessTimeline.map((point, index) => (
                 <g key={point.date}>
-                  <title>
-                    {`${point.date}: Fitness ${point.chronicLoad}, Fatigue ${point.acuteLoad}, Form ${point.form}`}
-                  </title>
                   <circle className="fitnessDot" cx={chartX(index)} cy={loadY(point.chronicLoad)} r="3" />
                   <circle className="fatigueDot" cx={chartX(index)} cy={loadY(point.acuteLoad)} r="3" />
                   <circle className="formDot" cx={chartX(index)} cy={formY(point.form)} r="3" />
@@ -2582,6 +2687,54 @@ const planIntakeModal = isPlanIntakeOpen ? (
                   </text>
                 </g>
               ))}
+
+              <g className="chartHoverLayer">
+                {fitnessTimeline.map((point, index) => (
+                  <rect
+                    key={`hover-${point.date}`}
+                    className="chartHoverTarget"
+                    x={chartX(index) - 8}
+                    y={loadChartTop}
+                    width="16"
+                    height={formChartBottom - loadChartTop}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${point.date}: Fitness ${point.chronicLoad}, Fatigue ${point.acuteLoad}, Form ${point.form}`}
+                    onPointerMove={() => setHoveredFitnessPoint(index)}
+                    onPointerLeave={() => setHoveredFitnessPoint(null)}
+                    onMouseEnter={() => setHoveredFitnessPoint(index)}
+                    onMouseMove={() => setHoveredFitnessPoint(index)}
+                    onMouseLeave={() => setHoveredFitnessPoint(null)}
+                    onFocus={() => setHoveredFitnessPoint(index)}
+                    onBlur={() => setHoveredFitnessPoint(null)}
+                  />
+                ))}
+              </g>
+
+              {hoveredFitnessData && (
+                <g className="chartTooltip" pointerEvents="none">
+                  <line
+                    className="chartTooltipLine"
+                    x1={hoveredFitnessX}
+                    x2={hoveredFitnessX}
+                    y1={loadChartTop}
+                    y2={formChartBottom}
+                  />
+                  <rect x={tooltipX} y={tooltipY} width="148" height="82" rx="12" />
+                  <text className="chartTooltipDate" x={tooltipX + 12} y={tooltipY + 24}>
+                    {getShortDateLabel(hoveredFitnessData.date)}
+                  </text>
+                  <text className="chartTooltipFitness" x={tooltipX + 12} y={tooltipY + 44}>
+                    Fitness {hoveredFitnessData.chronicLoad}
+                  </text>
+                  <text className="chartTooltipFatigue" x={tooltipX + 12} y={tooltipY + 62}>
+                    Fatigue {hoveredFitnessData.acuteLoad}
+                  </text>
+                  <text className="chartTooltipForm" x={tooltipX + 86} y={tooltipY + 62}>
+                    Form {hoveredFitnessData.form}
+                  </text>
+                </g>
+              )}
 
               <g className="chartCurrent">
                 <text x="990" y="54">Latest</text>
