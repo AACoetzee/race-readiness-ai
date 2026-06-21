@@ -993,6 +993,93 @@ function getTrainingPlanLongRunCap(goalRace) {
   return 6;
 }
 
+function getTaperWeeks(goalRace, planWeeks) {
+  const desiredTaperWeeks =
+    goalRace === "Marathon"
+      ? 3
+      : goalRace === "Half Marathon"
+        ? 2
+        : goalRace === "10K"
+          ? 1
+          : 1;
+
+  return Math.min(desiredTaperWeeks, Math.max(1, planWeeks - 1));
+}
+
+function getTaperMileageRatio(goalRace, weeksRemaining) {
+  if (weeksRemaining === 1) {
+    return goalRace === "Marathon" ? 0.35 : goalRace === "Half Marathon" ? 0.45 : 0.55;
+  }
+
+  if (goalRace === "Marathon") {
+    return weeksRemaining === 3 ? 0.82 : 0.62;
+  }
+
+  if (goalRace === "Half Marathon") {
+    return 0.72;
+  }
+
+  return 0.85;
+}
+
+function getTaperLongRunRatio(goalRace, weeksRemaining) {
+  if (weeksRemaining === 1) {
+    return goalRace === "Marathon" ? 0.3 : goalRace === "Half Marathon" ? 0.4 : 0.5;
+  }
+
+  if (goalRace === "Marathon") {
+    return weeksRemaining === 3 ? 0.8 : 0.55;
+  }
+
+  if (goalRace === "Half Marathon") {
+    return 0.65;
+  }
+
+  return 0.75;
+}
+
+function getStructuredLongRunFocus(goalRace, phase, longRunMiles, demonstratedLongRun) {
+  if (phase === "Race week") {
+    return "Race effort replaces the long run.";
+  }
+
+  if (phase === "Taper") {
+    return "Shorter long run with relaxed running only; arrive fresh.";
+  }
+
+  if (phase === "Recovery") {
+    return "Keep the long run easy and shorter than recent peak volume.";
+  }
+
+  const canAddQuality = demonstratedLongRun >= 8 && longRunMiles >= 9;
+
+  if (!canAddQuality) {
+    return "Keep this long run fully easy while building durable distance.";
+  }
+
+  if (goalRace === "Marathon" && phase === "Race-specific") {
+    return "Mostly easy with 2 x 3 mi at marathon effort in the second half, 1 mi easy between.";
+  }
+
+  if (goalRace === "Marathon" && phase === "Build") {
+    return "Easy first half, then finish the final 3-4 mi steady but controlled.";
+  }
+
+  if (goalRace === "Half Marathon" && phase === "Race-specific") {
+    return "Easy with the final 3 mi progressing toward half-marathon effort.";
+  }
+
+  if (goalRace === "10K" && phase === "Race-specific") {
+    return "Easy long run with 6 x 1 min controlled 10K-effort pickups in the middle.";
+  }
+
+  if (goalRace === "5K" && phase === "Race-specific") {
+    return "Easy long run with 6 x 20 sec relaxed strides after the run.";
+  }
+
+  return "Keep the long run mostly easy; add a controlled steady finish only if feeling fresh.";
+}
+
 function getObservedMaxHeartRate(activities) {
   const heartRates = activities.flatMap((activity) => [
     activity.max_heartrate,
@@ -1009,6 +1096,7 @@ function normalizeTrainingPlan(
   plan,
   goalRace,
   planBaselineWeeklyMiles,
+  trendLongestRun,
   planPreferences
 ) {
   /*
@@ -1021,7 +1109,13 @@ function normalizeTrainingPlan(
    * - prescribe an excessively long long run.
    */
   const longRunCap = getTrainingPlanLongRunCap(goalRace);
+  const taperWeeks = getTaperWeeks(goalRace, plan.weeks.length);
   const startingMileage = Math.max(10, planBaselineWeeklyMiles);
+  const demonstratedLongRun = Math.max(0, trendLongestRun || 0);
+  const startingLongRun = Math.min(
+    longRunCap,
+    Math.max(3, demonstratedLongRun > 0 ? demonstratedLongRun * 0.9 : startingMileage * 0.28)
+  );
   const hasInjuryLimitation =
     planPreferences?.injuryStatus &&
     planPreferences.injuryStatus !== "No current injury";
@@ -1038,7 +1132,7 @@ function normalizeTrainingPlan(
             ? 1.4
             : 1.25;
   let previousMileage = startingMileage;
-  let previousLongRun = Math.min(longRunCap, Math.max(6, startingMileage * 0.28));
+  let previousLongRun = startingLongRun;
 
   return {
     ...plan,
@@ -1047,7 +1141,7 @@ function normalizeTrainingPlan(
       const isCutbackWeek = week.week > 1 && week.week % 4 === 0;
       const weeksRemaining = plan.weeks.length - index;
       const isRaceWeek = weeksRemaining === 1;
-      const isTaperWeek = weeksRemaining === 2;
+      const isTaperWeek = weeksRemaining <= taperWeeks;
       const buildProgress = Math.min(
         1,
         index / Math.max(1, plan.weeks.length - 3)
@@ -1061,10 +1155,8 @@ function normalizeTrainingPlan(
         : Math.max(startingMileage, previousMileage * 1.15, progressiveBaseline);
       const baselineRatio = hasInjuryLimitation
         ? 0.75
-        : isRaceWeek
-          ? 0.5
-          : isTaperWeek
-            ? 0.7
+        : isTaperWeek
+          ? getTaperMileageRatio(goalRace, weeksRemaining)
             : isCutbackWeek
               ? 0.8
               : 1;
@@ -1079,16 +1171,20 @@ function normalizeTrainingPlan(
         ? 0
         : Math.min(
             longRunCap,
-            Math.max(6, targetMiles * (isCutbackWeek ? 0.22 : 0.28))
+            Math.max(startingLongRun * 0.85, targetMiles * (isCutbackWeek ? 0.22 : 0.28))
           );
       const recoveryLongRunCap = isCutbackWeek
         ? Math.max(minimumLongRun, previousLongRun * 0.85)
+        : weeklyLongRunCap;
+      const taperLongRunCap = isTaperWeek
+        ? Math.max(3, previousLongRun * getTaperLongRunRatio(goalRace, weeksRemaining))
         : weeklyLongRunCap;
       const longRunMiles = Number(
         Math.min(
           Math.max(week.longRunMiles, minimumLongRun),
           weeklyLongRunCap,
-          recoveryLongRunCap
+          recoveryLongRunCap,
+          taperLongRunCap
         ).toFixed(1)
       );
       const phase = isRaceWeek
@@ -1128,8 +1224,8 @@ function normalizeTrainingPlan(
       const longRunFocus = isRaceWeek
         ? "Race effort replaces the long run."
         : isTaperWeek
-          ? "Shorter long run with relaxed finish; arrive fresh."
-          : week.longRunFocus;
+          ? getStructuredLongRunFocus(goalRace, phase, longRunMiles, demonstratedLongRun)
+          : getStructuredLongRunFocus(goalRace, phase, longRunMiles, demonstratedLongRun) || week.longRunFocus;
       previousMileage = targetMiles;
       previousLongRun = longRunMiles;
 
@@ -1155,6 +1251,8 @@ function normalizeTrainingPlan(
     assumptions: [
       ...plan.assumptions,
       `${goalRace} long runs are capped near ${longRunCap} miles; race-tagged activities inform fitness but are not treated as normal weekly long runs.`,
+      `Long runs start from the demonstrated non-race long-run history of about ${trendLongestRun.toFixed(1)} miles, then build only as the runner's recent base supports it.`,
+      `${goalRace} taper uses ${taperWeeks} week${taperWeeks === 1 ? "" : "s"}, with marathon tapering longest and shorter races tapering less.`,
       `Weekly mileage starts from a demonstrated baseline of about ${planBaselineWeeklyMiles.toFixed(1)} miles per week.`,
       `The selected goal and plan style support a sensible peak near ${(startingMileage * peakMultiplier).toFixed(1)} miles per week.`,
       "Safety rules are applied after AI generation: normal weeks preserve and gradually build the demonstrated base, mileage jumps and long runs are capped, and recovery/taper weeks can drop lower.",
@@ -1559,7 +1657,7 @@ Rules:
 - Do not prescribe normal training weeks below that demonstrated baseline unless planPreferences reports an injury or limitation. Recovery, taper, and race weeks may be lower.
 - When there is enough time before race day and no injury limitation, build toward a meaningful peak above the demonstrated baseline instead of merely maintaining or detraining. For a healthy balanced PR attempt, target roughly 35-40% above baseline by the peak phase.
 - The goal race occurs in week ${planWeeks}, the final week of the plan. Never place race week, post-race recovery, or transition weeks before the final week.
-- Taper only immediately before the goal race. Do not begin a multi-week taper far ahead of race day.
+- Taper only immediately before the goal race. Marathon plans should taper about 3 weeks when time allows; half marathon about 2 weeks; 10K/5K about 1 week. Shorter races should reduce less than marathon.
 - Return whyThisPlan as 3-5 short reasons explaining which Strava trends and setup answers shaped the plan.
 - If lockedWeeks are supplied, preserve their intent and avoid contradicting them.
 - The supplied mostRecentRace is a fitness anchor, not a normal long-run training baseline.
@@ -1573,6 +1671,8 @@ Rules:
 - Keep the complete qualitySession, including warm-up and cool-down, close to 20% of that week's targetMiles so the prescription fits the daily mileage allocation.
 - Progress qualitySession with the phase: controlled strides or hills in Base, tempo and lactate-threshold development in Build, race-specific work near the peak, then short sharpening during taper.
 - longRunFocus must explain how to run the long run, such as easy only, progression finish, fueling practice, rolling hills, or race-specific steady miles.
+- Long-run progression must start from trendLongestRun, the runner's demonstrated non-race long-run history. Do not suddenly prescribe long runs far above what Strava shows.
+- When the runner's history supports it, integrate controlled work into long runs: marathon-pace blocks for marathon, progression finishes for half marathon, short pickups for 10K/5K. Keep these easier and less frequent as race distance gets shorter.
 - Recovery weeks should reduce volume and workout demand, not simply repeat the prior build week.
 - The weekly structure must respect daysPerWeek. If the runner asks for fewer days, reduce frequency before increasing workout intensity.
 - Mention the requested longRunDay and restDay in notes when useful.
@@ -1605,6 +1705,7 @@ Rules:
         parsed,
         goalRace,
         planBaselineWeeklyMiles,
+        trendLongestRun,
         planPreferences
       )
     );
