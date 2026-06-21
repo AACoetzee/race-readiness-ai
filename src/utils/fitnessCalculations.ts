@@ -53,23 +53,28 @@ export function calculateFitnessScore(runs: Run[]) {
   const longestRun = calculateLongestRun(runs);
   const numberOfRuns = calculateNumberOfRuns(runs);
 
+  if (numberOfRuns === 0) {
+    return 0;
+  }
+
   const hasHardWorkout = runs.some((run) => run.effort === "Hard");
+  const hasModerateWorkout = runs.some((run) => run.effort === "Moderate");
 
   const averageRunDistance =
     numberOfRuns > 0 ? totalMiles / numberOfRuns : 0;
 
-  const mileageScore = Math.min((totalMiles / 35) * 30, 30);
+  const mileageScore = Math.min((totalMiles / 45) * 30, 30);
 
-  const longRunScore = Math.min((longestRun / 14) * 25, 25);
+  const longRunScore = Math.min((longestRun / 18) * 25, 25);
 
-  const consistencyScore = Math.min((numberOfRuns / 5) * 20, 20);
+  const consistencyScore = Math.min((numberOfRuns / 6) * 20, 20);
 
-  const workoutScore = hasHardWorkout ? 15 : 7;
+  const workoutScore = hasHardWorkout ? 15 : hasModerateWorkout ? 8 : 0;
 
   const enduranceBalanceScore =
     averageRunDistance > 0 && longestRun <= averageRunDistance * 3
       ? 10
-      : 6;
+      : 3;
 
   const totalScore =
     mileageScore +

@@ -49,13 +49,13 @@ describe("fitness calculations", () => {
   it("calculates total miles, longest run, and fitness score", () => {
     expect(calculateTotalMiles(baseRuns)).toBe(38);
     expect(calculateLongestRun(baseRuns)).toBe(16);
-    expect(calculateFitnessScore(baseRuns)).toBe(96);
+    expect(calculateFitnessScore(baseRuns)).toBe(86);
   });
 
   it("handles an empty run list without infinite values", () => {
     expect(calculateTotalMiles([])).toBe(0);
     expect(calculateLongestRun([])).toBe(0);
-    expect(calculateFitnessScore([])).toBe(13);
+    expect(calculateFitnessScore([])).toBe(0);
     expect(calculateTrainingLoad([])).toBe("Low");
     expect(calculateFitnessBreakdown([])).toEqual({
       mileage: "Needs work",
