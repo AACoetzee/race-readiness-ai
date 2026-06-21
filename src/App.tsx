@@ -47,8 +47,6 @@ const TRAINING_PLAN_URL = `${API_BASE_URL}/api/training-plan`;
 const COACH_CHECK_IN_URL = `${API_BASE_URL}/api/coach-check-in`;
 const ACTIVITY_INSIGHT_URL = `${API_BASE_URL}/api/activity-insight`;
 const STRAVA_RUNS_URL = `${API_BASE_URL}/api/strava/runs`;
-const STRAVA_CONNECT_URL = `${API_BASE_URL}/api/strava/connect`;
-const STRAVA_ATHLETES_URL = `${API_BASE_URL}/api/strava/athletes`;
 const RECENT_RUN_LIMIT = 4;
 const TRAINING_WINDOW_DAYS = 7;
 const TREND_WINDOW_DAYS = 90;
@@ -152,16 +150,6 @@ type PlannedWorkout = {
   type: "Long run" | "Workout" | "Easy";
   miles: number;
   week: number;
-};
-
-type ConnectedStravaAthlete = {
-  id: number;
-  name: string;
-  username: string;
-  city: string;
-  country: string;
-  scope: string;
-  connectedAt: string;
 };
 
 function isRun(value: unknown): value is Run {
@@ -754,8 +742,6 @@ const [runs, setRuns] = useState<Run[]>(() => {
 });
 const [showAllRuns, setShowAllRuns] = useState(false);
 const [hoveredFitnessPoint, setHoveredFitnessPoint] = useState<number | null>(null);
-const [connectedStravaAthletes, setConnectedStravaAthletes] = useState<ConnectedStravaAthlete[]>([]);
-const [selectedStravaAthleteId, setSelectedStravaAthleteId] = useState("");
 const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>(() =>
   getStorage()?.getItem(SAVED_DISTANCE_UNIT_KEY) === "km" ? "km" : "mi"
 );
@@ -1046,50 +1032,6 @@ const [activityInsights, setActivityInsights] = useState<Record<string, Activity
 const [isLoadingActivityInsight, setIsLoadingActivityInsight] = useState(false);
 const visibleRuns = showAllRuns ? runs : runs.slice(0, RECENT_RUN_LIMIT);
 
-async function loadConnectedStravaAthletes() {
-  try {
-    const response = await fetch(STRAVA_ATHLETES_URL);
-    const data = await response.json();
-
-    if (!response.ok || !Array.isArray(data.athletes)) {
-      throw new Error(data.error || "Could not load connected Strava athletes.");
-    }
-
-    setConnectedStravaAthletes(data.athletes);
-
-    if (!selectedStravaAthleteId && data.athletes.length > 0) {
-      setSelectedStravaAthleteId(String(data.athletes[0].id));
-    }
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-useEffect(() => {
-  let ignoreResult = false;
-
-  fetch(STRAVA_ATHLETES_URL)
-    .then((response) => response.json().then((data) => ({ data, ok: response.ok })))
-    .then(({ data, ok }) => {
-      if (ignoreResult || !ok || !Array.isArray(data.athletes)) {
-        return;
-      }
-
-      setConnectedStravaAthletes(data.athletes);
-
-      if (data.athletes.length > 0) {
-        setSelectedStravaAthleteId(String(data.athletes[0].id));
-      }
-    })
-    .catch((error) => {
-      console.error(error);
-    });
-
-  return () => {
-    ignoreResult = true;
-  };
-}, []);
-
 useEffect(() => {
   getStorage()?.setItem(SAVED_DISTANCE_UNIT_KEY, distanceUnit);
   setAiSummary(null);
@@ -1219,10 +1161,6 @@ function handleImportDataClick() {
   importInputRef.current?.click();
 }
 
-function handleConnectStravaAthlete() {
-  window.location.href = STRAVA_CONNECT_URL;
-}
-
 async function handleImportStravaRuns() {
   // Frontend API pattern:
   // 1. Show a loading state.
@@ -1231,23 +1169,10 @@ async function handleImportStravaRuns() {
   // 4. Put valid data into React state.
   // 5. Always turn loading off in `finally`.
   setIsImportingStrava(true);
-  const selectedAthlete = connectedStravaAthletes.find(
-    (athlete) => String(athlete.id) === selectedStravaAthleteId
-  );
-  const params = new URLSearchParams({ per_page: "100" });
-
-  if (selectedAthlete) {
-    params.set("athleteId", String(selectedAthlete.id));
-  }
-
-  setActionMessage(
-    selectedAthlete
-      ? `Importing runs from ${selectedAthlete.name}'s Strava...`
-      : "Importing runs from Strava..."
-  );
+  setActionMessage("Importing runs from Strava...");
 
   try {
-    const response = await fetch(`${STRAVA_RUNS_URL}?${params}`);
+    const response = await fetch(`${STRAVA_RUNS_URL}?per_page=100`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -1267,8 +1192,8 @@ async function handleImportStravaRuns() {
     clearAiSummary();
     setActionMessage(
       importedRace
-        ? `Imported ${data.runs.length} runs from ${selectedAthlete?.name ?? "Strava"} and detected ${importedRace.type} from its race tag.`
-        : `Imported ${data.runs.length} runs from ${selectedAthlete?.name ?? "Strava"}. No race-tagged activity was found.`
+        ? `Imported ${data.runs.length} runs from Strava and detected ${importedRace.type} from its race tag.`
+        : `Imported ${data.runs.length} runs from Strava. No race-tagged activity was found.`
     );
   } catch (error) {
     console.error(error);
@@ -2405,41 +2330,6 @@ const planIntakeModal = isPlanIntakeOpen ? (
 
   <div className="topBarActions">
     {unitToggle}
-    <div className="stravaAthleteControls" aria-label="Connected Strava athlete">
-      <div className="stravaConnectionStatus">
-        <span className={connectedStravaAthletes.length > 0 ? "statusDotOnline" : "statusDotIdle"} />
-        <strong>
-          {connectedStravaAthletes.length > 0
-            ? `${connectedStravaAthletes.length} athlete${connectedStravaAthletes.length === 1 ? "" : "s"} connected`
-            : "No athlete connected"}
-        </strong>
-      </div>
-
-      <label>
-        <span>Strava athlete</span>
-        <select
-          value={selectedStravaAthleteId}
-          onChange={(event) => setSelectedStravaAthleteId(event.target.value)}
-        >
-          {connectedStravaAthletes.length === 0 && (
-            <option value="">Connect an athlete first</option>
-          )}
-          {connectedStravaAthletes.map((athlete) => (
-            <option key={athlete.id} value={athlete.id}>
-              {athlete.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <button className="secondaryButton" type="button" onClick={() => void loadConnectedStravaAthletes()}>
-        Refresh Athletes
-      </button>
-
-      <button className="connectAthleteButton" type="button" onClick={handleConnectStravaAthlete}>
-        Connect Athlete
-      </button>
-    </div>
     <div className="buttonRow">
       <button className="secondaryButton" onClick={handleImportDataClick}>
         Import Data
@@ -2447,7 +2337,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
       <button
         className="secondaryButton"
         onClick={handleImportStravaRuns}
-        disabled={isImportingStrava || connectedStravaAthletes.length === 0}
+        disabled={isImportingStrava}
       >
         {isImportingStrava ? "Importing..." : "Import Strava"}
       </button>
