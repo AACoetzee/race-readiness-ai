@@ -2484,6 +2484,47 @@ h2 {
   align-items: end;
   justify-content: flex-end;
   gap: 8px;
+  max-width: 650px;
+  padding: 10px;
+  border: 1px solid #dce7e3;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(236, 253, 245, 0.82), rgba(239, 246, 255, 0.78)),
+    #ffffff;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.07);
+}
+
+.stravaConnectionStatus {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #24453b;
+  font-size: 12px;
+}
+
+.stravaConnectionStatus strong {
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.statusDotOnline,
+.statusDotIdle {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.1);
+}
+
+.statusDotOnline {
+  background: #0f766e;
+}
+
+.statusDotIdle {
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.13);
 }
 
 .stravaAthleteControls label {
@@ -2493,7 +2534,7 @@ h2 {
 }
 
 .stravaAthleteControls span {
-  color: #777777;
+  color: #527064;
   font-size: 12px;
   font-weight: 700;
 }
@@ -2508,6 +2549,25 @@ h2 {
   font: inherit;
   font-size: 13px;
   font-weight: 700;
+}
+
+.connectAthleteButton {
+  min-height: 38px;
+  border: 1px solid #0f766e;
+  border-radius: 999px;
+  padding: 9px 15px;
+  background: #0f766e;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+
+.connectAthleteButton:hover {
+  border-color: #115e59;
+  background: #115e59;
 }
 
 .primaryButton,
@@ -2944,6 +3004,10 @@ h2 {
     display: grid;
     grid-template-columns: 1fr;
     justify-content: stretch;
+  }
+
+  .stravaConnectionStatus {
+    justify-content: center;
   }
 
   .topBarActions button {

@@ -2406,6 +2406,15 @@ const planIntakeModal = isPlanIntakeOpen ? (
   <div className="topBarActions">
     {unitToggle}
     <div className="stravaAthleteControls" aria-label="Connected Strava athlete">
+      <div className="stravaConnectionStatus">
+        <span className={connectedStravaAthletes.length > 0 ? "statusDotOnline" : "statusDotIdle"} />
+        <strong>
+          {connectedStravaAthletes.length > 0
+            ? `${connectedStravaAthletes.length} athlete${connectedStravaAthletes.length === 1 ? "" : "s"} connected`
+            : "No athlete connected"}
+        </strong>
+      </div>
+
       <label>
         <span>Strava athlete</span>
         <select
@@ -2427,7 +2436,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
         Refresh Athletes
       </button>
 
-      <button className="secondaryButton" type="button" onClick={handleConnectStravaAthlete}>
+      <button className="connectAthleteButton" type="button" onClick={handleConnectStravaAthlete}>
         Connect Athlete
       </button>
     </div>
