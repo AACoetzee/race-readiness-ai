@@ -463,6 +463,46 @@ function splitMileage(totalMiles: number, numberOfRuns: number) {
   return mileages;
 }
 
+function getWorkoutSessionMeta(workout: PlannedWorkout) {
+  if (workout.type === "Long run") {
+    return {
+      className: "sessionLong",
+      label: "Long",
+      purpose: "Build endurance",
+    };
+  }
+
+  if (workout.type === "Workout") {
+    return {
+      className: "sessionWorkout",
+      label: "Quality",
+      purpose: "Practice goal effort",
+    };
+  }
+
+  if (workout.title.toLowerCase().includes("recovery")) {
+    return {
+      className: "sessionRecovery",
+      label: "Recovery",
+      purpose: "Absorb training",
+    };
+  }
+
+  return {
+    className: "sessionEasy",
+    label: "Easy",
+    purpose: "Aerobic base",
+  };
+}
+
+function getPlanProgressPercent(plan: TrainingPlan | null, currentWeek: number) {
+  if (!plan || plan.weeks.length === 0) {
+    return 0;
+  }
+
+  return Math.round((currentWeek / plan.weeks.length) * 100);
+}
+
 function getPlannedWorkouts(
   plan: TrainingPlan | null,
   currentDate: string,
@@ -2016,6 +2056,9 @@ const planIntakeModal = isPlanIntakeOpen ? (
   }
 
   if (pageView === "trainingPlan" && trainingPlan) {
+    const currentPlanWeek = 1;
+    const planProgressPercent = getPlanProgressPercent(trainingPlan, currentPlanWeek);
+
     return (
       <main className="app">
         <header className="topBar">
@@ -2181,7 +2224,21 @@ const planIntakeModal = isPlanIntakeOpen ? (
           <div className="sectionHeader">
             <div>
               <h2>Weekly Training Schedule</h2>
-              <p>Each week contains the selected number of runs with distance distributed across the week.</p>
+              <p>
+                Each week follows a coach-style structure: easy running,
+                purposeful quality work, a long run, and protected recovery.
+              </p>
+            </div>
+          </div>
+
+          <div className="planProgressPanel">
+            <div>
+              <p className="eyebrow">Current Block</p>
+              <h3>Week {currentPlanWeek} of {trainingPlan.weeks.length}</h3>
+              <span>{planPreferences.daysPerWeek} runs per week · {planPreferences.planStyle}</span>
+            </div>
+            <div className="planProgressRail" aria-label={`Week ${currentPlanWeek} of ${trainingPlan.weeks.length}`}>
+              <i style={{ width: `${planProgressPercent}%` }} />
             </div>
           </div>
 
@@ -2193,6 +2250,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
                     <p className="cardLabel">Week {week.week}</p>
                     <h3>{week.phase}</h3>
                   </div>
+                  <span className="planPhasePill">{week.phase}</span>
                   <button
                     className={week.locked ? "lockButton locked" : "lockButton"}
                     type="button"
@@ -2238,17 +2296,28 @@ const planIntakeModal = isPlanIntakeOpen ? (
                   {plannedWorkouts
                     .filter((workout) => workout.week === week.week)
                     .sort((a, b) => a.date.localeCompare(b.date))
-                    .map((workout) => (
-                      <div key={`${workout.date}-${workout.title}`}>
-                        <span>
-                          {new Date(`${workout.date}T00:00:00`).toLocaleDateString("en-US", {
-                            weekday: "short",
-                          })}
-                        </span>
-                        <strong>{workout.title}</strong>
-                        <em>{formatDistance(workout.miles)}</em>
-                      </div>
-                    ))}
+                    .map((workout) => {
+                      const sessionMeta = getWorkoutSessionMeta(workout);
+
+                      return (
+                        <div
+                          className={`planSessionCard ${sessionMeta.className}`}
+                          key={`${workout.date}-${workout.title}`}
+                        >
+                          <span className="sessionDay">
+                            {new Date(`${workout.date}T00:00:00`).toLocaleDateString("en-US", {
+                              weekday: "short",
+                            })}
+                          </span>
+                          <div>
+                            <strong>{workout.title}</strong>
+                            <small>{sessionMeta.purpose}</small>
+                          </div>
+                          <em>{formatDistance(workout.miles)}</em>
+                          <b>{sessionMeta.label}</b>
+                        </div>
+                      );
+                    })}
                 </div>
 
                 <label className="planWeekField">

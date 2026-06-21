@@ -503,11 +503,50 @@ h3 {
   gap: 16px;
 }
 
+.planProgressPanel {
+  border: 1px solid #d7e5df;
+  border-radius: 20px;
+  margin-bottom: 18px;
+  padding: 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(220px, 1fr);
+  gap: 18px;
+  align-items: center;
+  background: #f8fafc;
+}
+
+.planProgressPanel h3 {
+  margin: 3px 0 6px;
+  color: #111827;
+  font-size: 24px;
+}
+
+.planProgressPanel span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.planProgressRail {
+  height: 12px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.planProgressRail i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f766e, #38bdf8);
+}
+
 .planWeek {
   border: 1px solid #d7e5df;
   border-radius: 18px;
   padding: 18px;
   background: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.05);
 }
 
 .planWeek h3 {
@@ -520,6 +559,17 @@ h3 {
   justify-content: space-between;
   gap: 14px;
   align-items: flex-start;
+}
+
+.planPhasePill {
+  border: 1px solid #ccfbf1;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .lockButton {
@@ -633,37 +683,79 @@ h3 {
 
 .planDailySchedule {
   display: grid;
-  gap: 6px;
+  gap: 10px;
 }
 
-.planDailySchedule div {
-  border-bottom: 1px solid #e2e8f0;
-  padding: 8px 0;
+.planSessionCard {
+  border: 1px solid #e2e8f0;
+  border-left-width: 5px;
+  border-radius: 16px;
+  padding: 11px;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 48px minmax(0, 1fr) auto auto;
   gap: 10px;
   align-items: center;
+  background: #ffffff;
 }
 
-.planDailySchedule span {
-  color: #0f766e;
+.planSessionCard.sessionLong {
+  border-left-color: #0f766e;
+}
+
+.planSessionCard.sessionWorkout {
+  border-left-color: #7c3aed;
+}
+
+.planSessionCard.sessionEasy {
+  border-left-color: #38bdf8;
+}
+
+.planSessionCard.sessionRecovery {
+  border-left-color: #94a3b8;
+}
+
+.sessionDay {
+  border-radius: 12px;
+  padding: 8px 0;
+  background: #f1f5f9;
+  color: #334155;
   font-size: 12px;
   font-weight: 900;
+  text-align: center;
   text-transform: uppercase;
 }
 
-.planDailySchedule strong {
+.planSessionCard strong {
+  display: block;
   overflow: hidden;
   color: #334155;
-  font-size: 13px;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.planDailySchedule em {
+.planSessionCard small {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planSessionCard em {
   color: #111827;
   font-size: 13px;
   font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.planSessionCard b {
+  border-radius: 999px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
   font-weight: 900;
   white-space: nowrap;
 }
@@ -2877,6 +2969,10 @@ h2 {
   .planHero {
     grid-template-columns: 1fr;
   }
+
+  .planProgressPanel {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 800px) {
@@ -2908,6 +3004,15 @@ h2 {
 
   .topBarActions button {
     width: 100%;
+  }
+
+  .planSessionCard {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+
+  .planSessionCard b {
+    grid-column: 2 / -1;
+    width: fit-content;
   }
 
   .dashboardTabs {
