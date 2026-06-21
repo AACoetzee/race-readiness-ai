@@ -836,6 +836,7 @@ const [isGeneratingTrainingPlan, setIsGeneratingTrainingPlan] = useState(false);
 const [isPlanIntakeOpen, setIsPlanIntakeOpen] = useState(false);
 const [pageView, setPageView] = useState<PageView>("dashboard");
 const [dashboardView, setDashboardView] = useState<DashboardView>("overview");
+const [selectedPlanWeekIndex, setSelectedPlanWeekIndex] = useState(0);
 const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(() => {
   // Load the last generated plan on startup when browser storage is available.
   try {
@@ -2054,8 +2055,16 @@ const planIntakeModal = isPlanIntakeOpen ? (
   }
 
   if (pageView === "trainingPlan" && trainingPlan) {
-    const currentPlanWeek = 1;
+    const safeSelectedPlanWeekIndex = Math.min(
+      selectedPlanWeekIndex,
+      Math.max(0, trainingPlan.weeks.length - 1)
+    );
+    const selectedPlanWeek =
+      trainingPlan.weeks[safeSelectedPlanWeekIndex] ?? trainingPlan.weeks[0];
+    const currentPlanWeek = selectedPlanWeek.week;
     const planProgressPercent = getPlanProgressPercent(trainingPlan, currentPlanWeek);
+    const canGoToPreviousPlanWeek = safeSelectedPlanWeekIndex > 0;
+    const canGoToNextPlanWeek = safeSelectedPlanWeekIndex < trainingPlan.weeks.length - 1;
 
     return (
       <main className="app">
@@ -2240,47 +2249,77 @@ const planIntakeModal = isPlanIntakeOpen ? (
             </div>
           </div>
 
-          <div className="planWeekList">
-            {trainingPlan.weeks.map((week) => (
-              <article className="planWeek" key={week.week}>
+          <div className="planWeekNavigator">
+            <button
+              aria-label="Previous week"
+              className="calendarArrowButton"
+              disabled={!canGoToPreviousPlanWeek}
+              type="button"
+              onClick={() => setSelectedPlanWeekIndex((index) => Math.max(0, index - 1))}
+            >
+              ‹
+            </button>
+
+            <div>
+              <strong>Week {selectedPlanWeek.week}</strong>
+              <span>{selectedPlanWeek.phase}</span>
+            </div>
+
+            <button
+              aria-label="Next week"
+              className="calendarArrowButton"
+              disabled={!canGoToNextPlanWeek}
+              type="button"
+              onClick={() =>
+                setSelectedPlanWeekIndex((index) =>
+                  Math.min(trainingPlan.weeks.length - 1, index + 1)
+                )
+              }
+            >
+              ›
+            </button>
+          </div>
+
+          <div className="planWeekSingle">
+              <article className="planWeek" key={selectedPlanWeek.week}>
                 <div className="planWeekHeader">
                   <div>
-                    <p className="cardLabel">Week {week.week}</p>
-                    <h3>{week.phase}</h3>
+                    <p className="cardLabel">Week {selectedPlanWeek.week}</p>
+                    <h3>{selectedPlanWeek.phase}</h3>
                   </div>
-                  <span className="planPhasePill">{hydratePlanWeek(week).qualityType}</span>
+                  <span className="planPhasePill">{hydratePlanWeek(selectedPlanWeek).qualityType}</span>
                 </div>
 
                 <div className="planWeekStats">
                   <div>
                     <span>Weekly distance ({distanceUnit})</span>
-                    <strong>{formatDistance(week.targetMiles)}</strong>
+                    <strong>{formatDistance(selectedPlanWeek.targetMiles)}</strong>
                   </div>
 
                   <div>
                     <span>Long run ({distanceUnit})</span>
-                    <strong>{formatDistance(week.longRunMiles)}</strong>
+                    <strong>{formatDistance(selectedPlanWeek.longRunMiles)}</strong>
                   </div>
                 </div>
 
                 <div className="planWorkoutPrescription">
                   <div>
                     <span>Quality session</span>
-                    <strong>{hydratePlanWeek(week).qualitySession}</strong>
+                    <strong>{hydratePlanWeek(selectedPlanWeek).qualitySession}</strong>
                   </div>
                   <div>
                     <span>Pace guidance</span>
-                    <p>{hydratePlanWeek(week).paceGuidance}</p>
+                    <p>{hydratePlanWeek(selectedPlanWeek).paceGuidance}</p>
                   </div>
                   <div>
                     <span>Long run focus</span>
-                    <p>{hydratePlanWeek(week).longRunFocus}</p>
+                    <p>{hydratePlanWeek(selectedPlanWeek).longRunFocus}</p>
                   </div>
                 </div>
 
                 <div className="planDailySchedule">
                   {plannedWorkouts
-                    .filter((workout) => workout.week === week.week)
+                    .filter((workout) => workout.week === selectedPlanWeek.week)
                     .sort((a, b) => a.date.localeCompare(b.date))
                     .map((workout) => {
                       const sessionMeta = getWorkoutSessionMeta(workout);
@@ -2309,15 +2348,14 @@ const planIntakeModal = isPlanIntakeOpen ? (
                 <div className="planReadOnlyNotes">
                   <div>
                     <span>Easy guidance</span>
-                    <p>{week.easyRunGuidance}</p>
+                    <p>{selectedPlanWeek.easyRunGuidance}</p>
                   </div>
                   <div>
                     <span>Coach notes</span>
-                    <p>{week.notes}</p>
+                    <p>{selectedPlanWeek.notes}</p>
                   </div>
                 </div>
               </article>
-            ))}
           </div>
         </section>
 
