@@ -631,6 +631,41 @@ h3 {
   font-weight: 800;
 }
 
+.planWorkoutPrescription {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.planWorkoutPrescription div {
+  border: 1px solid #dbe7e2;
+  border-radius: 16px;
+  padding: 12px;
+  background: #fbfefd;
+}
+
+.planWorkoutPrescription span {
+  display: block;
+  margin-bottom: 6px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.planWorkoutPrescription strong,
+.planWorkoutPrescription p {
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.planWorkoutPrescription p {
+  font-weight: 700;
+}
+
 .planWeekField {
   display: flex;
   flex-direction: column;

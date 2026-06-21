@@ -92,6 +92,10 @@ type PlanWeek = {
   phase: string;
   targetMiles: number;
   longRunMiles: number;
+  qualityType?: "Strides" | "Hills" | "Tempo" | "Lactate threshold" | "Race pace" | "Recovery" | "Taper";
+  qualitySession?: string;
+  paceGuidance?: string;
+  longRunFocus?: string;
   workoutFocus: string;
   easyRunGuidance: string;
   notes: string;
@@ -150,6 +154,8 @@ type PlannedWorkout = {
   type: "Long run" | "Workout" | "Easy";
   miles: number;
   week: number;
+  purpose?: string;
+  paceGuidance?: string;
 };
 
 function isRun(value: unknown): value is Run {
@@ -495,6 +501,34 @@ function getWorkoutSessionMeta(workout: PlannedWorkout) {
   };
 }
 
+function hydratePlanWeek(week: PlanWeek): PlanWeek {
+  const fallbackQualityType =
+    week.phase === "Recovery"
+      ? "Recovery"
+      : week.phase === "Taper" || week.phase === "Race week"
+        ? "Taper"
+        : "Lactate threshold";
+
+  return {
+    ...week,
+    qualityType: week.qualityType ?? fallbackQualityType,
+    qualitySession: week.qualitySession ?? week.workoutFocus,
+    paceGuidance:
+      week.paceGuidance ??
+      "Easy runs conversational; quality work should feel controlled and repeatable, not like racing.",
+    longRunFocus:
+      week.longRunFocus ??
+      "Keep the long run mostly easy and finish feeling in control.",
+  };
+}
+
+function hydrateTrainingPlan<T extends { weeks: PlanWeek[] }>(plan: T): T {
+  return {
+    ...plan,
+    weeks: plan.weeks.map(hydratePlanWeek),
+  };
+}
+
 function getPlanProgressPercent(plan: TrainingPlan | null, currentWeek: number) {
   if (!plan || plan.weeks.length === 0) {
     return 0;
@@ -518,6 +552,7 @@ function getPlannedWorkouts(
   const { workoutDay, runDays } = getWeeklyRunDays(preferences);
 
   return plan.weeks.flatMap((week) => {
+    const hydratedWeek = hydratePlanWeek(week);
     const currentWeekStart = addDays(weekStart, (week.week - 1) * 7);
     const longRunDate = getWeekdayDate(currentWeekStart, preferences.longRunDay);
     const workoutDate = getWeekdayDate(currentWeekStart, workoutDay);
@@ -542,20 +577,24 @@ function getPlannedWorkouts(
     const workouts: PlannedWorkout[] = [
       {
         date: formatDateForInput(longRunDate),
-        title: `Week ${week.week} long run`,
+        title: hydratedWeek.longRunFocus ?? `Week ${week.week} long run`,
         type: "Long run",
         miles: week.longRunMiles,
         week: week.week,
+        purpose: hydratedWeek.longRunFocus,
+        paceGuidance: hydratedWeek.paceGuidance,
       },
     ];
 
     if (hasQualityWorkout) {
       workouts.push({
         date: formatDateForInput(workoutDate),
-        title: week.workoutFocus,
+        title: hydratedWeek.qualitySession ?? week.workoutFocus,
         type: "Workout",
         miles: qualityMiles,
         week: week.week,
+        purpose: hydratedWeek.qualityType,
+        paceGuidance: hydratedWeek.paceGuidance,
       });
     }
 
@@ -571,6 +610,8 @@ function getPlannedWorkouts(
         type: "Easy",
         miles: easyMileages[index],
         week: week.week,
+        purpose: isRecoveryRun ? "Absorb training" : "Aerobic base",
+        paceGuidance: hydratedWeek.easyRunGuidance,
       });
     });
 
@@ -647,6 +688,10 @@ function isTrainingPlanResponse(value: unknown): value is Omit<
         typeof week.phase === "string" &&
         typeof week.targetMiles === "number" &&
         typeof week.longRunMiles === "number" &&
+        (week.qualityType === undefined || typeof week.qualityType === "string") &&
+        (week.qualitySession === undefined || typeof week.qualitySession === "string") &&
+        (week.paceGuidance === undefined || typeof week.paceGuidance === "string") &&
+        (week.longRunFocus === undefined || typeof week.longRunFocus === "string") &&
         typeof week.workoutFocus === "string" &&
         typeof week.easyRunGuidance === "string" &&
         typeof week.notes === "string" &&
@@ -803,7 +848,7 @@ const [trainingPlan, setTrainingPlan] = useState<TrainingPlan | null>(() => {
 
     const parsedPlan = JSON.parse(storedPlan);
 
-    return isStoredTrainingPlan(parsedPlan) ? parsedPlan : null;
+    return isStoredTrainingPlan(parsedPlan) ? hydrateTrainingPlan(parsedPlan) : null;
   } catch {
     return null;
   }
@@ -1372,7 +1417,7 @@ async function handleGenerateTrainingPlan() {
     }
 
     // If the user locked weeks locally, keep those edits after the AI returns a new plan.
-    setTrainingPlan({
+    setTrainingPlan(hydrateTrainingPlan({
       ...data,
       heartRateMax: effectiveMaxHeartRate,
       heartRateZones: createHeartRateZones(effectiveMaxHeartRate),
@@ -1383,7 +1428,7 @@ async function handleGenerateTrainingPlan() {
 
         return lockedWeek ?? week;
       }),
-    });
+    }));
     setIsPlanIntakeOpen(false);
     setPageView("trainingPlan");
     setActionMessage("");
@@ -2250,7 +2295,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
                     <p className="cardLabel">Week {week.week}</p>
                     <h3>{week.phase}</h3>
                   </div>
-                  <span className="planPhasePill">{week.phase}</span>
+                  <span className="planPhasePill">{hydratePlanWeek(week).qualityType}</span>
                   <button
                     className={week.locked ? "lockButton locked" : "lockButton"}
                     type="button"
@@ -2292,6 +2337,21 @@ const planIntakeModal = isPlanIntakeOpen ? (
                   </div>
                 </div>
 
+                <div className="planWorkoutPrescription">
+                  <div>
+                    <span>Quality session</span>
+                    <strong>{hydratePlanWeek(week).qualitySession}</strong>
+                  </div>
+                  <div>
+                    <span>Pace guidance</span>
+                    <p>{hydratePlanWeek(week).paceGuidance}</p>
+                  </div>
+                  <div>
+                    <span>Long run focus</span>
+                    <p>{hydratePlanWeek(week).longRunFocus}</p>
+                  </div>
+                </div>
+
                 <div className="planDailySchedule">
                   {plannedWorkouts
                     .filter((workout) => workout.week === week.week)
@@ -2311,7 +2371,7 @@ const planIntakeModal = isPlanIntakeOpen ? (
                           </span>
                           <div>
                             <strong>{workout.title}</strong>
-                            <small>{sessionMeta.purpose}</small>
+                            <small>{workout.purpose ?? sessionMeta.purpose}</small>
                           </div>
                           <em>{formatDistance(workout.miles)}</em>
                           <b>{sessionMeta.label}</b>
@@ -2321,12 +2381,37 @@ const planIntakeModal = isPlanIntakeOpen ? (
                 </div>
 
                 <label className="planWeekField">
-                  Workout
+                  Quality session
                   <textarea
-                    value={week.workoutFocus}
+                    value={hydratePlanWeek(week).qualitySession}
                     onChange={(event) =>
                       handleUpdatePlanWeek(week.week, {
+                        qualitySession: event.target.value,
                         workoutFocus: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="planWeekField">
+                  Pace guidance
+                  <textarea
+                    value={hydratePlanWeek(week).paceGuidance}
+                    onChange={(event) =>
+                      handleUpdatePlanWeek(week.week, {
+                        paceGuidance: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="planWeekField">
+                  Long run focus
+                  <textarea
+                    value={hydratePlanWeek(week).longRunFocus}
+                    onChange={(event) =>
+                      handleUpdatePlanWeek(week.week, {
+                        longRunFocus: event.target.value,
                       })
                     }
                   />

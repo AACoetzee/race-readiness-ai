@@ -107,6 +107,10 @@ const trainingPlanSchema = {
           "phase",
           "targetMiles",
           "longRunMiles",
+          "qualityType",
+          "qualitySession",
+          "paceGuidance",
+          "longRunFocus",
           "workoutFocus",
           "easyRunGuidance",
           "notes",
@@ -116,6 +120,21 @@ const trainingPlanSchema = {
           phase: { type: "string" },
           targetMiles: { type: "number" },
           longRunMiles: { type: "number" },
+          qualityType: {
+            type: "string",
+            enum: [
+              "Strides",
+              "Hills",
+              "Tempo",
+              "Lactate threshold",
+              "Race pace",
+              "Recovery",
+              "Taper",
+            ],
+          },
+          qualitySession: { type: "string" },
+          paceGuidance: { type: "string" },
+          longRunFocus: { type: "string" },
           workoutFocus: { type: "string" },
           easyRunGuidance: { type: "string" },
           notes: { type: "string" },
@@ -907,6 +926,18 @@ function validateTrainingPlan(plan, weeksUntilGoalRace) {
         week.targetMiles >= 0 &&
         isFiniteNumber(week.longRunMiles) &&
         week.longRunMiles >= 0 &&
+        [
+          "Strides",
+          "Hills",
+          "Tempo",
+          "Lactate threshold",
+          "Race pace",
+          "Recovery",
+          "Taper",
+        ].includes(week.qualityType) &&
+        isNonEmptyString(week.qualitySession) &&
+        isNonEmptyString(week.paceGuidance) &&
+        isNonEmptyString(week.longRunFocus) &&
         isNonEmptyString(week.workoutFocus) &&
         isNonEmptyString(week.easyRunGuidance) &&
         isNonEmptyString(week.notes)
@@ -1077,6 +1108,28 @@ function normalizeTrainingPlan(
         /\b(taper|race week|post[- ]?race|transition)\b/i.test(
           `${week.phase} ${week.workoutFocus} ${week.notes}`
         );
+      const qualityType = isRaceWeek
+        ? "Taper"
+        : isTaperWeek
+          ? "Taper"
+          : isCutbackWeek
+            ? "Recovery"
+            : week.qualityType;
+      const qualitySession = isRaceWeek
+        ? `Race week: 2 mi easy with 4 x 20 sec strides early in the week, then ${goalRace} race day`
+        : isTaperWeek
+          ? "1 mi easy, 3 x 3 min at controlled threshold with 2 min jog, 1 mi easy"
+          : isCutbackWeek
+            ? "No hard workout; 35-45 min easy with 4-6 x 20 sec relaxed strides"
+            : week.qualitySession;
+      const paceGuidance = isCutbackWeek
+        ? "Keep all running conversational; strides should feel quick but relaxed, never forced."
+        : week.paceGuidance;
+      const longRunFocus = isRaceWeek
+        ? "Race effort replaces the long run."
+        : isTaperWeek
+          ? "Shorter long run with relaxed finish; arrive fresh."
+          : week.longRunFocus;
       previousMileage = targetMiles;
       previousLongRun = longRunMiles;
 
@@ -1085,10 +1138,14 @@ function normalizeTrainingPlan(
         phase,
         targetMiles,
         longRunMiles,
+        qualityType,
+        qualitySession,
+        paceGuidance,
+        longRunFocus,
         workoutFocus: isCutbackWeek
-          ? "No structured workout; finish one easy run with 4-6 x 20 sec relaxed strides and full easy recovery"
+          ? qualitySession
           : hasPrematureRaceLanguage
-            ? "One controlled race-specific workout; keep the remaining runs easy"
+            ? qualitySession
             : week.workoutFocus,
         notes: hasPrematureRaceLanguage
           ? `Continue building toward race day; keep the requested ${planPreferences?.longRunDay || "weekend"} long run and ${planPreferences?.restDay || "preferred"} rest day.`
@@ -1496,6 +1553,8 @@ Rules:
 - Use the 90-day non-race training run list, average weekly mileage, longest non-race run, run frequency, recent race tag, and observed heart-rate data.
 - Use planPreferences to shape the plan around the runner's goal, available days per week, long-run day, rest day, style preference, injury status, and notes.
 - Treat Strava history as the baseline. Do not create a plan that ignores the runner's recent mileage and frequency.
+- Infer practical training paces from the supplied Strava runs and selectedGoalTime. Use ranges, not fake precision.
+- paceGuidance must include easy, tempo, lactate-threshold, and race-specific guidance when relevant. Use both pace language and HR-zone language when heart-rate data exists.
 - The demonstrated plan baseline is ${planBaselineWeeklyMiles.toFixed(1)} miles per week, using the stronger sustained signal from the 90-day average (${trendAverageWeeklyMiles.toFixed(1)}) and latest 6-week average (${recentAverageWeeklyMiles.toFixed(1)}).
 - Do not prescribe normal training weeks below that demonstrated baseline unless planPreferences reports an injury or limitation. Recovery, taper, and race weeks may be lower.
 - When there is enough time before race day and no injury limitation, build toward a meaningful peak above the demonstrated baseline instead of merely maintaining or detraining. For a healthy balanced PR attempt, target roughly 35-40% above baseline by the peak phase.
@@ -1508,9 +1567,12 @@ Rules:
 - Use heart rate as guidance: easy runs should usually stay conversational and mostly Z1/Z2; workouts may touch Z3/Z4/Z5 depending on the race.
 - Keep the plan realistic and safe: one long run and mostly easy running every week.
 - For 3-5 running days per week, prescribe one main quality session. For 6-7 running days, prescribe at most two quality sessions, and only when the runner's history supports it.
-- Make workoutFocus a specific session the runner can perform, not a vague goal. Include a warm-up, the exact work intervals or tempo duration, recoveries, and a cool-down. Example format: "1 mi easy, 3 x 8 min threshold with 2 min jog, 1 mi easy."
-- Keep the complete workoutFocus session, including warm-up and cool-down, close to 20% of that week's targetMiles so the prescription fits the daily mileage allocation.
-- Progress workoutFocus with the phase: controlled strides or hills in Base, threshold or longer aerobic intervals in Build, race-specific work near the peak, then short sharpening during taper.
+- Make qualitySession a specific session the runner can perform, not a vague goal. Include a warm-up, the exact intervals or tempo duration, recoveries, and a cool-down. Example format: "1 mi easy, 3 x 8 min lactate threshold with 2 min jog, 1 mi easy."
+- qualityType must match the session: Base weeks usually Strides or Hills, Build weeks Tempo or Lactate threshold, peak weeks Race pace, recovery weeks Recovery, taper weeks Taper.
+- workoutFocus should be a short human-readable summary of qualitySession.
+- Keep the complete qualitySession, including warm-up and cool-down, close to 20% of that week's targetMiles so the prescription fits the daily mileage allocation.
+- Progress qualitySession with the phase: controlled strides or hills in Base, tempo and lactate-threshold development in Build, race-specific work near the peak, then short sharpening during taper.
+- longRunFocus must explain how to run the long run, such as easy only, progression finish, fueling practice, rolling hills, or race-specific steady miles.
 - Recovery weeks should reduce volume and workout demand, not simply repeat the prior build week.
 - The weekly structure must respect daysPerWeek. If the runner asks for fewer days, reduce frequency before increasing workout intensity.
 - Mention the requested longRunDay and restDay in notes when useful.
