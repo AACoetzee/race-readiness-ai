@@ -22,6 +22,7 @@ The app combines Strava activity history, deterministic fitness calculations, ra
 - Imports real activity data from Strava
 - Generates AI activity analysis, weekly check-ins, and race training plans
 - Builds training plans around the runner's Strava baseline, preferred run frequency, rest day, long-run day, and goal
+- Shows generated training plans as read-only coach guidance; changes happen by updating the goal/setup and regenerating
 - Highlights strengths, risks, and suggestions
 
 ## Tech Stack
@@ -103,9 +104,11 @@ The plan generator:
 - Uses the stronger sustained baseline from the 90-day and latest 6-week Strava trends
 - Respects the selected number of running days
 - Uses an 80/20-style structure with mostly easy running
-- Schedules a weekly long run and limited quality work
-- Adds genuine recovery weeks, tapering, and race week
-- Converts plan distances safely between miles and kilometers for display and editing
+- Adds structured tempo, lactate-threshold, race-pace, long-run, recovery, and taper guidance
+- Starts long-run progression from the runner's demonstrated non-race Strava long-run history
+- Uses race-distance-specific tapering, with longer marathon tapers and shorter 5K/10K tapers
+- Shows plans as read-only; users adjust the plan by changing the goal/setup questionnaire and regenerating
+- Converts plan distances safely between miles and kilometers for display
 
 ## Architecture
 
@@ -161,7 +164,7 @@ Strava or imported JSON
 - Calculates 7-day, 42-day, and 90-day training metrics
 - Displays activities, calendar months, heart-rate zones, load charts, and training plans
 - Requests AI summaries, activity analysis, weekly check-ins, and training plans
-- Saves imported runs, distance-unit preference, plan preferences, edited plans, and configured maximum heart rate in browser storage
+- Saves imported runs, distance-unit preference, plan preferences, generated plans, and configured maximum heart rate in browser storage
 
 `src/utils/fitnessCalculations.ts` contains deterministic calculations. These calculations run without AI and include:
 
@@ -199,7 +202,7 @@ AI generates explanations and proposes plans, but it does not control every calc
 
 - Race predictions begin with deterministic race formulas.
 - Imported data and AI responses are validated before use.
-- The training-plan normalizer enforces mileage progression, long-run limits, recovery weeks, taper timing, and final race week.
+- The training-plan normalizer enforces mileage progression, Strava-based long-run starts, race-distance taper length, long-run limits, recovery weeks, and final race week.
 - The AI-summary normalizer removes contradictory advice and verifies unit conversions.
 - Missing information, such as weather data, is reported as missing instead of being invented.
 

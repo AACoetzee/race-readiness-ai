@@ -1058,8 +1058,6 @@ const formatDistance = (miles: number) =>
   `${formatDistanceValue(miles)} ${distanceUnit}`;
 const formatWeeklyDistance = (miles: number) =>
   `${formatDistanceValue(miles)} ${distanceUnit}/wk`;
-const convertDisplayedDistanceToMiles = (distance: number) =>
-  distanceUnit === "km" ? distance / KILOMETERS_PER_MILE : distance;
 const formatRunPace = (pace: string) => {
   if (distanceUnit === "mi" || !pace.includes("/mi")) {
     return pace;
@@ -1131,7 +1129,7 @@ useEffect(() => {
 useEffect(() => {
   // useEffect runs after React renders. This effect watches `trainingPlan` and
   // copies each change into browser storage.
-  // Persist plan edits, locks, and generated weeks so refreshes do not wipe progress.
+  // Persist generated weeks so refreshes do not wipe progress.
   const storage = getStorage();
 
   if (!storage) {
@@ -1379,9 +1377,6 @@ function handleExportReport() {
 
 async function handleGenerateTrainingPlan() {
   // Only non-race trend runs are sent as the normal training baseline.
-  // Locked weeks are also sent so a regeneration can respect manual edits.
-  const lockedWeeks = trainingPlan?.weeks.filter((week) => week.locked) ?? [];
-
   setIsGeneratingTrainingPlan(true);
   setActionMessage("Generating your AI training plan...");
 
@@ -1407,7 +1402,7 @@ async function handleGenerateTrainingPlan() {
         observedMaxHeartRate: effectiveMaxHeartRate,
         trendRuns: planSourceRuns,
         planPreferences,
-        lockedWeeks,
+        lockedWeeks: [],
       }),
     });
     const data = await response.json();
@@ -1416,18 +1411,10 @@ async function handleGenerateTrainingPlan() {
       throw new Error(data.overview || "Could not generate a training plan.");
     }
 
-    // If the user locked weeks locally, keep those edits after the AI returns a new plan.
     setTrainingPlan(hydrateTrainingPlan({
       ...data,
       heartRateMax: effectiveMaxHeartRate,
       heartRateZones: createHeartRateZones(effectiveMaxHeartRate),
-      weeks: data.weeks.map((week) => {
-        const lockedWeek = lockedWeeks.find(
-          (candidate) => candidate.week === week.week
-        );
-
-        return lockedWeek ?? week;
-      }),
     }));
     setIsPlanIntakeOpen(false);
     setPageView("trainingPlan");
@@ -1448,40 +1435,6 @@ async function handleGenerateTrainingPlan() {
 function handleOpenPlanIntake() {
   setIsPlanIntakeOpen(true);
   setActionMessage("");
-}
-
-function handleUpdatePlanWeek(
-  weekNumber: number,
-  updates: Partial<PlanWeek>
-) {
-  // Editing a week automatically locks it so regeneration does not casually overwrite it.
-  setTrainingPlan((currentPlan) => {
-    if (!currentPlan) {
-      return currentPlan;
-    }
-
-    return {
-      ...currentPlan,
-      weeks: currentPlan.weeks.map((week) =>
-        week.week === weekNumber ? { ...week, ...updates, locked: true } : week
-      ),
-    };
-  });
-}
-
-function handleTogglePlanWeekLock(weekNumber: number) {
-  setTrainingPlan((currentPlan) => {
-    if (!currentPlan) {
-      return currentPlan;
-    }
-
-    return {
-      ...currentPlan,
-      weeks: currentPlan.weeks.map((week) =>
-        week.week === weekNumber ? { ...week, locked: !week.locked } : week
-      ),
-    };
-  });
 }
 
 function handleClearTrainingPlan() {
@@ -2296,44 +2249,17 @@ const planIntakeModal = isPlanIntakeOpen ? (
                     <h3>{week.phase}</h3>
                   </div>
                   <span className="planPhasePill">{hydratePlanWeek(week).qualityType}</span>
-                  <button
-                    className={week.locked ? "lockButton locked" : "lockButton"}
-                    type="button"
-                    onClick={() => handleTogglePlanWeekLock(week.week)}
-                  >
-                    {week.locked ? "Locked" : "Lock"}
-                  </button>
                 </div>
 
                 <div className="planWeekStats">
                   <div>
                     <span>Weekly distance ({distanceUnit})</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={formatDistanceValue(week.targetMiles)}
-                      onChange={(event) =>
-                        handleUpdatePlanWeek(week.week, {
-                          targetMiles: convertDisplayedDistanceToMiles(Number(event.target.value)),
-                        })
-                      }
-                    />
+                    <strong>{formatDistance(week.targetMiles)}</strong>
                   </div>
 
                   <div>
                     <span>Long run ({distanceUnit})</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={formatDistanceValue(week.longRunMiles)}
-                      onChange={(event) =>
-                        handleUpdatePlanWeek(week.week, {
-                          longRunMiles: convertDisplayedDistanceToMiles(Number(event.target.value)),
-                        })
-                      }
-                    />
+                    <strong>{formatDistance(week.longRunMiles)}</strong>
                   </div>
                 </div>
 
@@ -2380,66 +2306,16 @@ const planIntakeModal = isPlanIntakeOpen ? (
                     })}
                 </div>
 
-                <label className="planWeekField">
-                  Quality session
-                  <textarea
-                    value={hydratePlanWeek(week).qualitySession}
-                    onChange={(event) =>
-                      handleUpdatePlanWeek(week.week, {
-                        qualitySession: event.target.value,
-                        workoutFocus: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="planWeekField">
-                  Pace guidance
-                  <textarea
-                    value={hydratePlanWeek(week).paceGuidance}
-                    onChange={(event) =>
-                      handleUpdatePlanWeek(week.week, {
-                        paceGuidance: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="planWeekField">
-                  Long run focus
-                  <textarea
-                    value={hydratePlanWeek(week).longRunFocus}
-                    onChange={(event) =>
-                      handleUpdatePlanWeek(week.week, {
-                        longRunFocus: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="planWeekField">
-                  Easy guidance
-                  <textarea
-                    value={week.easyRunGuidance}
-                    onChange={(event) =>
-                      handleUpdatePlanWeek(week.week, {
-                        easyRunGuidance: event.target.value,
-                      })
-                    }
-                  />
-                </label>
-
-                <label className="planWeekField">
-                  Notes
-                  <textarea
-                    value={week.notes}
-                    onChange={(event) =>
-                      handleUpdatePlanWeek(week.week, {
-                        notes: event.target.value,
-                      })
-                    }
-                  />
-                </label>
+                <div className="planReadOnlyNotes">
+                  <div>
+                    <span>Easy guidance</span>
+                    <p>{week.easyRunGuidance}</p>
+                  </div>
+                  <div>
+                    <span>Coach notes</span>
+                    <p>{week.notes}</p>
+                  </div>
+                </div>
               </article>
             ))}
           </div>

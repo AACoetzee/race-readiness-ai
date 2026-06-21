@@ -572,23 +572,6 @@ h3 {
   white-space: nowrap;
 }
 
-.lockButton {
-  border: 1px solid #cbd5e1;
-  border-radius: 999px;
-  padding: 7px 12px;
-  background: white;
-  color: #475569;
-  font-size: 12px;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.lockButton.locked {
-  border-color: #f1d08a;
-  background: #fffbeb;
-  color: #92400e;
-}
-
 .planWeek p {
   color: #475569;
   line-height: 1.45;
@@ -619,16 +602,6 @@ h3 {
 .planWeekStats strong {
   font-size: 20px;
   white-space: nowrap;
-}
-
-.planWeekStats input {
-  width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 10px 12px;
-  color: #111827;
-  font-size: 18px;
-  font-weight: 800;
 }
 
 .planWorkoutPrescription {
@@ -666,28 +639,34 @@ h3 {
   font-weight: 700;
 }
 
-.planWeekField {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
+.planReadOnlyNotes {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.planReadOnlyNotes div {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.planReadOnlyNotes span {
+  display: block;
+  margin-bottom: 6px;
   color: #64748b;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
   text-transform: uppercase;
 }
 
-.planWeekField textarea {
-  width: 100%;
-  min-height: 72px;
-  border: 1px solid #cbd5e1;
-  border-radius: 12px;
-  padding: 10px 12px;
-  color: #334155;
-  font-size: 14px;
-  line-height: 1.4;
-  resize: vertical;
-  text-transform: none;
+.planReadOnlyNotes p {
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .planMethodGrid {
@@ -2612,8 +2591,7 @@ h2 {
 .fullButton,
 .aiButton,
 .calendarTodayButton,
-.calendarArrowButton,
-.lockButton {
+.calendarArrowButton {
   min-height: 38px;
   border: 1px solid #d9d9d9;
   border-radius: 999px;
@@ -2646,8 +2624,7 @@ h2 {
 .secondaryButton,
 .smallButton,
 .calendarTodayButton,
-.calendarArrowButton,
-.lockButton {
+.calendarArrowButton {
   background: #ffffff;
   color: #0d0d0d;
 }
@@ -2655,8 +2632,7 @@ h2 {
 .secondaryButton:hover,
 .smallButton:hover,
 .calendarTodayButton:hover,
-.calendarArrowButton:hover,
-.lockButton:hover {
+.calendarArrowButton:hover {
   border-color: #b8b8b8;
   background: #f7f7f7;
 }
@@ -2927,8 +2903,6 @@ h2 {
 .planIntakeGrid textarea,
 .planRaceGrid select,
 .planRaceGrid input,
-.planWeekStats input,
-.planWeekField textarea,
 .heartRateSettings input {
   border-color: #d9d9d9;
   border-radius: 8px;
